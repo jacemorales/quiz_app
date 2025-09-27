@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import TapToReveal from './components/TapToReveal.vue'
 import SwipeQuiz from './components/SwipeQuiz.vue'
+import PixelAI from './components/ai.vue'
 
 const currentMode = ref('tap')
 </script>
@@ -21,11 +22,18 @@ const currentMode = ref('tap')
       >
         Swipe Quiz
       </button>
+      <button 
+        @click="currentMode = 'ai'" 
+        :class="{ active: currentMode === 'ai' }"
+      >
+        AI
+      </button>
     </nav>
 
     <div class="quiz-container">
       <TapToReveal v-if="currentMode === 'tap'" />
-      <SwipeQuiz v-else />
+      <SwipeQuiz v-if="currentMode === 'swipe'" />
+      <PixelAI v-if="currentMode === 'ai'" />
     </div>
   </div>
 </template>
