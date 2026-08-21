@@ -2,9 +2,11 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
+import { useQuizStore } from '../composables/useQuizStore'
 
 const router = useRouter()
-const { getAuthHeaders } = useAuth()
+const { user } = useAuth()
+const { getUserQuizzes, getUserDashboardStats, deleteQuiz } = useQuizStore()
 
 const quizzes = ref([])
 const stats = ref({
@@ -35,24 +37,16 @@ function showToast(msg) {
   }, 3000)
 }
 
-async function fetchDashboardData() {
+function fetchDashboardData() {
   loading.value = true
   error.value = ''
   try {
-    const [quizzesRes, statsRes] = await Promise.all([
-      fetch('/api/quizzes', { headers: getAuthHeaders() }),
-      fetch('/api/quizzes/stats', { headers: getAuthHeaders() })
-    ])
-
-    if (!quizzesRes.ok || !statsRes.ok) {
-      throw new Error('Failed to load dashboard data')
+    if (!user.value) {
+      router.push('/login')
+      return
     }
-
-    const quizzesData = await quizzesRes.json()
-    const statsData = await statsRes.json()
-
-    quizzes.value = quizzesData.quizzes || []
-    stats.value = statsData
+    quizzes.value = getUserQuizzes(user.value.userId)
+    stats.value = getUserDashboardStats(user.value.userId)
   } catch (err) {
     error.value = err.message || 'Error loading dashboard'
   } finally {
@@ -83,24 +77,15 @@ function cancelDelete() {
   showDeleteModal.value = false
 }
 
-async function handleDeleteQuiz() {
-  if (!quizToDelete.value) return
+function handleDeleteQuiz() {
+  if (!quizToDelete.value || !user.value) return
   deleting.value = true
   try {
-    const res = await fetch(`/api/quizzes/${quizToDelete.value.quizId}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    })
-
-    if (!res.ok) {
-      const data = await res.json()
-      throw new Error(data.error || 'Failed to delete quiz')
-    }
-
+    deleteQuiz(quizToDelete.value.quizId, user.value.userId)
     showToast('Quiz deleted successfully')
     showDeleteModal.value = false
     quizToDelete.value = null
-    await fetchDashboardData()
+    fetchDashboardData()
   } catch (err) {
     alert(err.message || 'Failed to delete quiz')
   } finally {
@@ -397,7 +382,7 @@ function formatDate(dateStr) {
   flex-shrink: 0;
 }
 
-.icon-primary { background: #e0e7ff; }
+.icon-primary { background: #f0fdf4; }
 .icon-success { background: #d1fae5; }
 .icon-warning { background: #fef3c7; }
 .icon-info { background: #e0f2fe; }

@@ -67,11 +67,11 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach(async (to, from, next) => {
-  const { token, user, checkAuth } = useAuth()
+router.beforeEach((to, from, next) => {
+  const { user, checkAuth } = useAuth()
 
-  if (token.value && !user.value) {
-    await checkAuth()
+  if (!user.value) {
+    checkAuth()
   }
 
   if (to.meta.requiresAuth && !user.value) {

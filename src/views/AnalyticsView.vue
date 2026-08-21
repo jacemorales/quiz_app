@@ -2,28 +2,26 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
+import { useQuizStore } from '../composables/useQuizStore'
 
 const route = useRoute()
 const quizId = computed(() => route.params.quizId)
-const { getAuthHeaders } = useAuth()
+const { user } = useAuth()
+const { getQuizAnalytics } = useQuizStore()
 
 const analytics = ref(null)
 const loading = ref(true)
 const error = ref('')
 
-async function fetchAnalytics() {
+function fetchAnalytics() {
   loading.value = true
   error.value = ''
   try {
-    const res = await fetch(`/api/quizzes/${quizId.value}/analytics`, {
-      headers: getAuthHeaders()
-    })
-    if (!res.ok) {
-      const data = await res.json()
-      throw new Error(data.error || 'Failed to load analytics')
+    if (!user.value) {
+      throw new Error('Please log in to view analytics')
     }
-    const data = await res.json()
-    analytics.value = data.analytics
+    const data = getQuizAnalytics(quizId.value, user.value.userId)
+    analytics.value = data
   } catch (err) {
     error.value = err.message || 'Error loading analytics'
   } finally {

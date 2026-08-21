@@ -1,9 +1,11 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useQuizStore } from '../composables/useQuizStore'
 
 const route = useRoute()
 const quizId = computed(() => route.params.quizId)
+const { getQuizById, submitQuizAttempt } = useQuizStore()
 
 // Game Flow States: 'loading' | 'intro' | 'participant_info' | 'taking' | 'confirm_submit' | 'result' | 'error'
 const gameState = ref('loading')
@@ -25,16 +27,37 @@ const endTime = ref(null)
 const submissionResult = ref(null)
 const submitting = ref(false)
 
-async function fetchQuiz() {
+function fetchQuiz() {
   gameState.value = 'loading'
   try {
-    const res = await fetch(`/api/public/quiz/${quizId.value}`)
-    if (!res.ok) {
-      const data = await res.json()
-      throw new Error(data.error || 'Quiz not found')
+    const loadedQuiz = getQuizById(quizId.value)
+    if (!loadedQuiz) {
+      throw new Error('Quiz not found or has been deleted')
     }
-    const data = await res.json()
-    quiz.value = data.quiz
+
+    // Sanitize question options so correct answer flags are NOT revealed in public view
+    const sanitizedQuestions = (loadedQuiz.questions || []).map(q => ({
+      questionId: q.questionId,
+      questionText: q.questionText,
+      order: q.order,
+      options: (q.options || []).map(o => ({
+        optionId: o.optionId,
+        optionText: o.optionText
+      }))
+    }))
+
+    quiz.value = {
+      quizId: loadedQuiz.quizId,
+      title: loadedQuiz.title,
+      description: loadedQuiz.description,
+      timerType: loadedQuiz.timerType,
+      timerDuration: loadedQuiz.timerDuration,
+      anonymous: loadedQuiz.anonymous,
+      participantFields: loadedQuiz.participantFields,
+      questionCount: sanitizedQuestions.length,
+      questions: sanitizedQuestions
+    }
+
     gameState.value = 'intro'
   } catch (err) {
     errorMessage.value = err.message || 'Failed to load quiz'
@@ -54,7 +77,6 @@ function startFlow() {
   if (quiz.value.anonymous) {
     startQuizTaking()
   } else {
-    // Initialize participant fields
     if (Array.isArray(quiz.value.participantFields)) {
       quiz.value.participantFields.forEach(f => {
         participantData[f.fieldName] = ''
@@ -65,7 +87,6 @@ function startFlow() {
 }
 
 function handleParticipantInfoSubmit() {
-  // Validate required participant fields
   if (Array.isArray(quiz.value.participantFields)) {
     for (const f of quiz.value.participantFields) {
       if (f.required && !participantData[f.fieldName]?.trim()) {
@@ -82,7 +103,6 @@ function startQuizTaking() {
   currentQuestionIndex.value = 0
   startTime.value = Date.now()
 
-  // Setup timers
   if (quiz.value.timerType === 'quiz') {
     totalTimerSeconds.value = (Number(quiz.value.timerDuration) || 10) * 60
     startOverallTimer()
@@ -113,7 +133,6 @@ function startQuestionTimer() {
       questionTimerSeconds.value--
     } else {
       clearInterval(timerInterval)
-      // Auto move to next question or submit if on last question
       if (currentQuestionIndex.value < quiz.value.questions.length - 1) {
         currentQuestionIndex.value++
         startQuestionTimer()
@@ -141,11 +160,6 @@ function toggleOptionSelect(optionId) {
   } else {
     userAnswers[qId].splice(idx, 1)
   }
-}
-
-function selectSingleOption(optionId) {
-  const qId = currentQuestion.value.questionId
-  userAnswers[qId] = [optionId]
 }
 
 function isOptionSelected(optionId) {
@@ -179,35 +193,26 @@ function cancelSubmit() {
   gameState.value = 'taking'
 }
 
-async function submitQuiz() {
+function submitQuiz() {
   submitting.value = true
   clearInterval(timerInterval)
   endTime.value = Date.now()
   const completionTimeSeconds = Math.round((endTime.value - (startTime.value || Date.now())) / 1000)
 
-  // Format payload
   const formattedAnswers = Object.keys(userAnswers).map(qId => ({
     questionId: qId,
     selectedOptionIds: userAnswers[qId]
   }))
 
   try {
-    const res = await fetch(`/api/public/quiz/${quizId.value}/submit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        participantData,
-        answers: formattedAnswers,
-        completionTimeSeconds
-      })
-    })
+    const result = submitQuizAttempt(
+      quizId.value,
+      participantData,
+      formattedAnswers,
+      completionTimeSeconds
+    )
 
-    const data = await res.json()
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to submit quiz')
-    }
-
-    submissionResult.value = data
+    submissionResult.value = result
     gameState.value = 'result'
   } catch (err) {
     alert(err.message || 'Error submitting quiz')

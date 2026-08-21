@@ -2,10 +2,12 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
+import { useQuizStore } from '../composables/useQuizStore'
 
 const router = useRouter()
 const route = useRoute()
-const { getAuthHeaders } = useAuth()
+const { user } = useAuth()
+const { getQuizById, createQuiz, updateQuiz } = useQuizStore()
 
 const isEditing = computed(() => Boolean(route.params.quizId))
 const quizIdToEdit = computed(() => route.params.quizId || null)
@@ -53,18 +55,14 @@ function showToast(msg) {
   }, 3000)
 }
 
-onMounted(async () => {
+onMounted(() => {
   if (isEditing.value && quizIdToEdit.value) {
     loadingQuiz.value = true
     try {
-      const res = await fetch(`/api/quizzes/${quizIdToEdit.value}`, {
-        headers: getAuthHeaders()
-      })
-      if (!res.ok) {
-        throw new Error('Failed to load quiz details')
+      const quiz = getQuizById(quizIdToEdit.value)
+      if (!quiz) {
+        throw new Error('Quiz not found for editing')
       }
-      const data = await res.json()
-      const quiz = data.quiz
 
       quizForm.title = quiz.title
       quizForm.description = quiz.description || ''
@@ -83,7 +81,7 @@ onMounted(async () => {
         quizForm.questions = quiz.questions.map(q => ({
           questionId: q.questionId,
           questionText: q.questionText,
-          options: q.options.map(o => ({
+          options: (q.options || []).map(o => ({
             optionId: o.optionId,
             optionText: o.optionText,
             isCorrect: Boolean(o.isCorrect)
@@ -244,40 +242,35 @@ function removeOption(qIndex, oIndex) {
 
 // --- Submit / Generate Quiz ---
 
-async function handleGenerateQuiz() {
+function handleGenerateQuiz() {
   wizardError.value = ''
   saving.value = true
 
   try {
-    const url = isEditing.value
-      ? `/api/quizzes/${quizIdToEdit.value}`
-      : '/api/quizzes'
-    const method = isEditing.value ? 'PUT' : 'POST'
-
-    const res = await fetch(url, {
-      method,
-      headers: getAuthHeaders(),
-      body: JSON.stringify(quizForm)
-    })
-
-    const data = await res.json()
-
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to generate quiz')
+    if (!user.value) {
+      throw new Error('Please log in to save a quiz')
     }
 
-    const quizObj = data.quiz
-    const fullUrl = `${window.location.origin}/quiz/${quizObj.quizId}`
-
-    createdQuizResult.value = {
-      quizId: quizObj.quizId,
-      title: quizObj.title,
-      url: fullUrl
+    if (isEditing.value && quizIdToEdit.value) {
+      const updated = updateQuiz(quizIdToEdit.value, quizForm, user.value.userId)
+      const fullUrl = `${window.location.origin}/quiz/${updated.quizId}`
+      createdQuizResult.value = {
+        quizId: updated.quizId,
+        title: updated.title,
+        url: fullUrl
+      }
+    } else {
+      const { quiz: created, quizUrl } = createQuiz(quizForm, user.value.userId)
+      createdQuizResult.value = {
+        quizId: created.quizId,
+        title: created.title,
+        url: quizUrl
+      }
     }
 
     showSuccessModal.value = true
   } catch (err) {
-    wizardError.value = err.message || 'Error creating quiz'
+    wizardError.value = err.message || 'Error saving quiz'
   } finally {
     saving.value = false
   }
