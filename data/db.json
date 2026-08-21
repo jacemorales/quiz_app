@@ -1,0 +1,169 @@
+{
+  "users": [
+    {
+      "userId": "usr_60a0a500cd8093f6b988e1de",
+      "name": "Alice",
+      "email": "alice@example.com",
+      "passwordHash": "$2b$10$idvDZRWt3VtK.SRvDaJVa.kLrJyjnH5iqQGGYDRITPMk.xBXJxOvK",
+      "createdAt": "2026-08-21T11:14:33.171Z"
+    },
+    {
+      "userId": "usr_4ee132bad0827f604bee61da",
+      "name": "Bob Creator",
+      "email": "bob@quizhub.com",
+      "passwordHash": "$2b$10$DQApbMwGJ1dMqBsnPg5ChOL68aBGRav8nNIUSqxmNv1zt4SFppVGS",
+      "createdAt": "2026-08-21T11:21:14.640Z"
+    }
+  ],
+  "quizzes": [
+    {
+      "quizId": "qz_68284d3e231441f3b2622e3af38863ca",
+      "userId": "usr_60a0a500cd8093f6b988e1de",
+      "title": "General Knowledge Quiz",
+      "description": "Test your general knowledge!",
+      "timerType": "question",
+      "timerDuration": 30,
+      "anonymous": false,
+      "participantFields": [
+        {
+          "fieldName": "Full Name",
+          "fieldType": "text",
+          "required": true
+        }
+      ],
+      "showScore": true,
+      "status": "active",
+      "createdAt": "2026-08-21T11:14:33.193Z"
+    },
+    {
+      "quizId": "qz_e2136777fefa9557c9d544d7b599d2c5",
+      "userId": "usr_4ee132bad0827f604bee61da",
+      "title": "Updated Science Quiz 2025",
+      "description": "Updated description!",
+      "timerType": "none",
+      "timerDuration": 0,
+      "anonymous": true,
+      "participantFields": [],
+      "showScore": true,
+      "status": "deleted",
+      "createdAt": "2026-08-21T11:21:14.659Z",
+      "updatedAt": "2026-08-21T11:21:14.682Z"
+    }
+  ],
+  "questions": [
+    {
+      "questionId": "q_75903b2x",
+      "quizId": "qz_68284d3e231441f3b2622e3af38863ca",
+      "questionText": "What is the capital of France?",
+      "order": 1
+    },
+    {
+      "questionId": "q_wscbl2b0",
+      "quizId": "qz_e2136777fefa9557c9d544d7b599d2c5",
+      "questionText": "What is H2O?",
+      "order": 1
+    }
+  ],
+  "options": [
+    {
+      "optionId": "opt_lpk8cfa2",
+      "questionId": "q_75903b2x",
+      "optionText": "Paris",
+      "isCorrect": true
+    },
+    {
+      "optionId": "opt_3wjve06z",
+      "questionId": "q_75903b2x",
+      "optionText": "London",
+      "isCorrect": false
+    },
+    {
+      "optionId": "opt_rcxb58ul",
+      "questionId": "q_75903b2x",
+      "optionText": "Berlin",
+      "isCorrect": false
+    },
+    {
+      "optionId": "opt_i66xgl73",
+      "questionId": "q_wscbl2b0",
+      "optionText": "Water",
+      "isCorrect": true
+    },
+    {
+      "optionId": "opt_1gjch06h",
+      "questionId": "q_wscbl2b0",
+      "optionText": "Air",
+      "isCorrect": false
+    }
+  ],
+  "attempts": [
+    {
+      "attemptId": "att_b923da94beb3ca704b935d19",
+      "quizId": "qz_e2136777fefa9557c9d544d7b599d2c5",
+      "userId": "usr_4ee132bad0827f604bee61da",
+      "participantData": {
+        "Full Name": "Participant One",
+        "Student ID": "S101"
+      },
+      "score": 100,
+      "totalQuestions": 2,
+      "correctCount": 2,
+      "incorrectCount": 0,
+      "completionTimeSeconds": 25,
+      "submittedAt": "2026-08-21T11:21:14.668Z"
+    },
+    {
+      "attemptId": "att_8ec25bbdd2584977495e4cfd",
+      "quizId": "qz_e2136777fefa9557c9d544d7b599d2c5",
+      "userId": "usr_4ee132bad0827f604bee61da",
+      "participantData": {
+        "Full Name": "Participant Two",
+        "Student ID": "S102"
+      },
+      "score": 50,
+      "totalQuestions": 2,
+      "correctCount": 1,
+      "incorrectCount": 1,
+      "completionTimeSeconds": 30,
+      "submittedAt": "2026-08-21T11:21:14.673Z"
+    }
+  ],
+  "answers": [
+    {
+      "answerId": "ans_qgzmpdon",
+      "attemptId": "att_b923da94beb3ca704b935d19",
+      "questionId": "q_gvuqn5sv",
+      "selectedOptionIds": [
+        "opt_xtornltk"
+      ],
+      "isCorrect": true
+    },
+    {
+      "answerId": "ans_z9gw58fy",
+      "attemptId": "att_b923da94beb3ca704b935d19",
+      "questionId": "q_tq8m6ow2",
+      "selectedOptionIds": [
+        "opt_6dydwhf7"
+      ],
+      "isCorrect": true
+    },
+    {
+      "answerId": "ans_p7ym6nwe",
+      "attemptId": "att_8ec25bbdd2584977495e4cfd",
+      "questionId": "q_gvuqn5sv",
+      "selectedOptionIds": [
+        "opt_5zs1x8g4"
+      ],
+      "isCorrect": false
+    },
+    {
+      "answerId": "ans_dztxwbu7",
+      "attemptId": "att_8ec25bbdd2584977495e4cfd",
+      "questionId": "q_tq8m6ow2",
+      "selectedOptionIds": [
+        "opt_6dydwhf7"
+      ],
+      "isCorrect": true
+    }
+  ]
+}
