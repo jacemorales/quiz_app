@@ -27,10 +27,10 @@ const endTime = ref(null)
 const submissionResult = ref(null)
 const submitting = ref(false)
 
-function fetchQuiz() {
+async function fetchQuiz() {
   gameState.value = 'loading'
   try {
-    const loadedQuiz = getQuizById(quizId.value)
+    const loadedQuiz = await getQuizById(quizId.value)
     if (!loadedQuiz) {
       throw new Error('Quiz not found or has been deleted')
     }
@@ -54,6 +54,7 @@ function fetchQuiz() {
       timerDuration: loadedQuiz.timerDuration,
       anonymous: loadedQuiz.anonymous,
       participantFields: loadedQuiz.participantFields,
+      allowPreviousQuestions: loadedQuiz.allowPreviousQuestions !== undefined ? Boolean(loadedQuiz.allowPreviousQuestions) : true,
       questionCount: sanitizedQuestions.length,
       questions: sanitizedQuestions
     }
@@ -177,6 +178,7 @@ function nextQuestion() {
 }
 
 function prevQuestion() {
+  if (!quiz.value?.allowPreviousQuestions) return
   if (currentQuestionIndex.value > 0) {
     currentQuestionIndex.value--
     if (quiz.value.timerType === 'question') {
@@ -193,7 +195,7 @@ function cancelSubmit() {
   gameState.value = 'taking'
 }
 
-function submitQuiz() {
+async function submitQuiz() {
   submitting.value = true
   clearInterval(timerInterval)
   endTime.value = Date.now()
@@ -205,7 +207,7 @@ function submitQuiz() {
   }))
 
   try {
-    const result = submitQuizAttempt(
+    const result = await submitQuizAttempt(
       quizId.value,
       participantData,
       formattedAnswers,
@@ -353,6 +355,7 @@ function formatTimer(seconds) {
         <!-- Footer Actions -->
         <div class="taking-footer mt-32">
           <button
+            v-if="quiz.allowPreviousQuestions"
             @click="prevQuestion"
             :disabled="currentQuestionIndex === 0"
             class="btn btn-outline"
@@ -760,5 +763,14 @@ function formatTimer(seconds) {
 .thank-you-box p {
   color: var(--gray-600);
   font-size: 1.1rem;
+}
+
+@media (max-width: 640px) {
+  .quiz-card {
+    padding: 24px 16px;
+  }
+  .result-stats-cards {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

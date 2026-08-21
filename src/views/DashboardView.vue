@@ -37,7 +37,7 @@ function showToast(msg) {
   }, 3000)
 }
 
-function fetchDashboardData() {
+async function fetchDashboardData() {
   loading.value = true
   error.value = ''
   try {
@@ -45,10 +45,10 @@ function fetchDashboardData() {
       router.push('/login')
       return
     }
-    quizzes.value = getUserQuizzes(user.value.userId)
-    stats.value = getUserDashboardStats(user.value.userId)
+    quizzes.value = await getUserQuizzes(user.value.userId)
+    stats.value = await getUserDashboardStats(user.value.userId)
   } catch (err) {
-    error.value = err.message || 'Error loading dashboard'
+    error.value = err.message || 'Error loading dashboard from Google Sheets'
   } finally {
     loading.value = false
   }
@@ -77,11 +77,11 @@ function cancelDelete() {
   showDeleteModal.value = false
 }
 
-function handleDeleteQuiz() {
+async function handleDeleteQuiz() {
   if (!quizToDelete.value || !user.value) return
   deleting.value = true
   try {
-    deleteQuiz(quizToDelete.value.quizId, user.value.userId)
+    await deleteQuiz(quizToDelete.value.quizId, user.value.userId)
     showToast('Quiz deleted successfully')
     showDeleteModal.value = false
     quizToDelete.value = null
@@ -115,11 +115,11 @@ function formatDate(dateStr) {
 
       <!-- Dashboard Header -->
       <div class="dashboard-header">
-        <div>
+        <div class="header-text">
           <h1 class="page-title">Creator Dashboard</h1>
           <p class="page-subtitle">Manage your quizzes, view analytics, and track participant activity</p>
         </div>
-        <router-link to="/create-quiz" class="btn btn-primary btn-lg">
+        <router-link to="/create-quiz" class="btn btn-primary btn-lg create-quiz-btn">
           + Create Quiz
         </router-link>
       </div>
@@ -184,14 +184,14 @@ function formatDate(dateStr) {
                 {{ stats.mostPopularQuiz ? stats.mostPopularQuiz.title : 'None' }}
               </span>
               <span class="stat-label">
-                Most Popular Quiz
+                Most Popular
                 <template v-if="stats.mostPopularQuiz">({{ stats.mostPopularQuiz.attemptCount }} attempts)</template>
               </span>
             </div>
           </div>
         </div>
 
-        <!-- Quizzes Table / Cards -->
+        <!-- Quizzes Section -->
         <div class="quiz-section">
           <div class="section-header">
             <h2>Your Quizzes</h2>
@@ -208,8 +208,8 @@ function formatDate(dateStr) {
             </router-link>
           </div>
 
-          <!-- Quiz Cards / Table -->
-          <div v-else class="table-card">
+          <!-- Desktop Table Layout -->
+          <div v-else class="table-card desktop-quiz-view">
             <div class="table-responsive">
               <table class="quiz-table">
                 <thead>
@@ -261,6 +261,44 @@ function formatDate(dateStr) {
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- Mobile Cards Layout -->
+          <div class="mobile-quiz-view">
+            <div v-for="quiz in quizzes" :key="quiz.quizId" class="mobile-quiz-card">
+              <div class="mobile-card-header">
+                <div class="mobile-quiz-info">
+                  <h3 class="mobile-quiz-title">{{ quiz.title }}</h3>
+                  <p class="mobile-quiz-desc" v-if="quiz.description">{{ quiz.description }}</p>
+                </div>
+                <span :class="['badge', quiz.status === 'active' ? 'badge-active' : 'badge-draft']">
+                  {{ quiz.status }}
+                </span>
+              </div>
+
+              <div class="mobile-card-meta">
+                <div class="meta-badge-group">
+                  <span class="meta-pill">❓ {{ quiz.questionCount }} Qs</span>
+                  <span class="meta-pill">👥 {{ quiz.attemptCount }} Attempts</span>
+                </div>
+                <span class="mobile-date">📅 {{ formatDate(quiz.createdAt) }}</span>
+              </div>
+
+              <div class="mobile-card-actions">
+                <button @click="copyQuizUrl(quiz.quizId)" class="btn btn-outline btn-sm">
+                  📋 Share Link
+                </button>
+                <router-link :to="`/quiz/${quiz.quizId}/analytics`" class="btn btn-outline btn-sm">
+                  📊 Analytics
+                </router-link>
+                <router-link :to="`/edit-quiz/${quiz.quizId}`" class="btn btn-outline btn-sm">
+                  ✏️ Edit
+                </router-link>
+                <button @click="confirmDelete(quiz)" class="btn btn-danger btn-sm">
+                  🗑️ Delete
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -340,6 +378,7 @@ function formatDate(dateStr) {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 32px;
+  gap: 16px;
 }
 
 .page-title {
@@ -521,6 +560,7 @@ function formatDate(dateStr) {
 .quiz-title {
   font-weight: 700;
   color: var(--dark);
+  word-break: break-word;
 }
 
 .quiz-desc {
@@ -539,10 +579,6 @@ function formatDate(dateStr) {
   font-size: 0.825rem;
   color: var(--primary);
   cursor: pointer;
-}
-
-.quiz-id-badge:hover {
-  background: var(--primary-light);
 }
 
 .badge-neutral {
@@ -569,6 +605,87 @@ function formatDate(dateStr) {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* Mobile Responsive Quiz View Cards */
+.desktop-quiz-view {
+  display: block;
+}
+.mobile-quiz-view {
+  display: none;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mobile-quiz-card {
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mobile-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.mobile-quiz-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--dark);
+  line-height: 1.3;
+}
+
+.mobile-quiz-desc {
+  font-size: 0.85rem;
+  color: var(--gray-500);
+  margin-top: 4px;
+}
+
+.mobile-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--gray-100);
+}
+
+.meta-badge-group {
+  display: flex;
+  gap: 8px;
+}
+
+.meta-pill {
+  background: var(--gray-100);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.mobile-date {
+  font-size: 0.8rem;
+  color: var(--gray-500);
+}
+
+.mobile-card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.mobile-card-actions .btn {
+  width: 100%;
 }
 
 .activity-card {
@@ -591,11 +708,6 @@ function formatDate(dateStr) {
   gap: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--gray-100);
-}
-
-.activity-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
 }
 
 .activity-info {
@@ -680,11 +792,34 @@ function formatDate(dateStr) {
   to { transform: rotate(360deg); }
 }
 
-/* Transitions */
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.3s;
-}
-.fade-enter-from, .fade-leave-to {
-  opacity: 0;
+@media (max-width: 768px) {
+  .dashboard-page {
+    padding: 20px 16px;
+  }
+  .dashboard-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .page-title {
+    font-size: 1.75rem;
+  }
+  .create-quiz-btn {
+    width: 100%;
+  }
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  .desktop-quiz-view {
+    display: none;
+  }
+  .mobile-quiz-view {
+    display: flex;
+  }
+  .modal-actions {
+    flex-direction: column-reverse;
+  }
+  .modal-actions .btn {
+    width: 100%;
+  }
 }
 </style>
