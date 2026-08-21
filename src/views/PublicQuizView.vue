@@ -247,7 +247,7 @@ function formatTimer(seconds) {
 
       <!-- INTRO SCREEN -->
       <div v-else-if="gameState === 'intro'" class="intro-screen">
-        <div class="quiz-badge">Quiz Hub</div>
+        <div class="quiz-badge">Quiz App</div>
         <h1 class="quiz-title">{{ quiz.title }}</h1>
         <p class="quiz-desc" v-if="quiz.description">{{ quiz.description }}</p>
 

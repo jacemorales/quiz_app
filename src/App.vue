@@ -22,7 +22,7 @@ function handleLogout() {
       <div class="header-container">
         <router-link to="/" class="brand-logo">
           <div class="logo-icon">Q</div>
-          <span class="logo-text">Quiz<span class="logo-highlight">Hub</span></span>
+          <span class="logo-text">Quiz <span class="logo-highlight">App</span></span>
         </router-link>
 
         <nav class="header-nav">
@@ -49,7 +49,7 @@ function handleLogout() {
 
     <footer class="app-footer">
       <div class="footer-container">
-        <p>© 2025 Quiz Hub Inc. All rights reserved. Professional Online Quiz Platform.</p>
+        <p>© 2025 Quiz App. All rights reserved. Professional Online Quiz Platform.</p>
       </div>
     </footer>
   </div>
@@ -57,9 +57,9 @@ function handleLogout() {
 
 <style>
 :root {
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-light: #eef2ff;
+  --primary: #16a34a;
+  --primary-hover: #15803d;
+  --primary-light: #f0fdf4;
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
@@ -134,7 +134,7 @@ body {
 .logo-icon {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, var(--primary) 0%, #818cf8 100%);
+  background: linear-gradient(135deg, var(--primary) 0%, #4ade80 100%);
   color: var(--white);
   border-radius: var(--radius-sm);
   display: flex;
@@ -142,7 +142,7 @@ body {
   justify-content: center;
   font-weight: 900;
   font-size: 1.2rem;
-  box-shadow: 0 2px 4px rgba(79, 70, 229, 0.3);
+  box-shadow: 0 2px 4px rgba(22, 163, 74, 0.3);
 }
 
 .logo-highlight {
@@ -235,7 +235,7 @@ body {
 .btn-primary {
   background-color: var(--primary);
   color: var(--white);
-  box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2);
+  box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);
 }
 
 .btn-primary:hover {

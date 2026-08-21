@@ -8,10 +8,10 @@ const { isAuthenticated } = useAuth()
   <div class="landing-page">
     <section class="hero-section">
       <div class="hero-container">
-        <span class="hero-badge">⚡ Powerful Online Quiz SaaS</span>
+        <span class="hero-badge">⚡ Powerful Online Quiz App</span>
         <h1 class="hero-title">Create, Share & Host Quizzes Effortlessly</h1>
         <p class="hero-subtitle">
-          Eliminate custom quiz development. Quiz Hub gives creators, educators, businesses, and developers
+          Eliminate custom quiz development. Quiz App gives creators, educators, businesses, and developers
           an all-in-one platform to customize quizzes, collect answers, and analyze real-time results.
         </p>
 
