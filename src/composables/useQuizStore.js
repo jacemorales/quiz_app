@@ -176,7 +176,7 @@ export function useQuizStore() {
       totalCompleted,
       avgScore,
       mostPopularQuiz,
-      recentActivity
+      recentActivity: []
     }
   }
 
