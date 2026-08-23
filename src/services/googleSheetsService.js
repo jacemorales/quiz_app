@@ -9,7 +9,11 @@ async function callAppsScriptApi(action, payload = {}) {
   }
 
   try {
-    const response = await fetch(APPS_SCRIPT_URL, {
+    // Append ?action= to the request URL to ensure action is preserved even across Google Apps Script HTTP redirects
+    const delimiter = APPS_SCRIPT_URL.includes('?') ? '&' : '?'
+    const requestUrl = `${APPS_SCRIPT_URL}${delimiter}action=${encodeURIComponent(action)}`
+
+    const response = await fetch(requestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8'
@@ -25,6 +29,10 @@ async function callAppsScriptApi(action, payload = {}) {
     }
 
     const result = await response.json()
+
+    if (!result || typeof result !== 'object') {
+      throw new Error('Invalid response from Google Apps Script Web App.')
+    }
 
     if (!result.success) {
       throw new Error(result.error || 'Unable to save your data right now. Please check your connection and try again.')
@@ -44,16 +52,25 @@ async function callAppsScriptApi(action, payload = {}) {
 
 export async function apiRegisterUser(user) {
   const res = await callAppsScriptApi('createUser', user)
+  if (!res.user) {
+    throw new Error('User record was not returned by Google Apps Script. Please verify Web App deployment and spreadsheet permissions.')
+  }
   return res.user
 }
 
 export async function apiLoginUser(email, password) {
   const res = await callAppsScriptApi('loginUser', { email, password })
+  if (!res.user) {
+    throw new Error('User session was not returned by Google Apps Script.')
+  }
   return res.user
 }
 
 export async function apiGetUser(userId) {
   const res = await callAppsScriptApi('getUser', { userId })
+  if (!res.user) {
+    throw new Error('User not found in Google Sheets.')
+  }
   return res.user
 }
 
@@ -61,27 +78,39 @@ export async function apiGetUser(userId) {
 
 export async function apiCreateQuiz(quizData) {
   const res = await callAppsScriptApi('createQuiz', quizData)
+  if (!res.quiz) {
+    throw new Error('Quiz was not returned by Google Apps Script. Please verify Web App deployment.')
+  }
   return res.quiz
 }
 
 export async function apiGetQuiz(quizId, userId = null) {
   const res = await callAppsScriptApi('getQuiz', { quizId, userId })
+  if (!res.quiz) {
+    throw new Error('Quiz data was not returned by Google Apps Script.')
+  }
   return res.quiz
 }
 
 export async function apiGetUserQuizzes(userId) {
   const res = await callAppsScriptApi('getUserQuizzes', { userId })
-  return res.quizzes || []
+  if (!Array.isArray(res.quizzes)) {
+    throw new Error('Quizzes list was not returned by Google Apps Script.')
+  }
+  return res.quizzes
 }
 
 export async function apiUpdateQuiz(quizId, quizData, userId) {
   const res = await callAppsScriptApi('updateQuiz', { ...quizData, quizId, userId })
+  if (!res.quiz) {
+    throw new Error('Updated quiz was not returned by Google Apps Script.')
+  }
   return res.quiz
 }
 
 export async function apiDeleteQuiz(quizId, userId) {
   const res = await callAppsScriptApi('deleteQuiz', { quizId, userId })
-  return res.success
+  return Boolean(res.success)
 }
 
 // --- Attempt & Submission Operations ---
@@ -100,5 +129,8 @@ export async function apiSubmitQuizAttempt(quizId, participantData, answers, com
 
 export async function apiGetQuizAnalytics(quizId, userId) {
   const res = await callAppsScriptApi('getAnalytics', { quizId, userId })
+  if (!res.analytics) {
+    throw new Error('Analytics data was not returned by Google Apps Script.')
+  }
   return res.analytics
 }
