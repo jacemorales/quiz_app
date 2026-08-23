@@ -1,17 +1,21 @@
 // Frontend Service communicating directly with Google Apps Script Backend API
 // No localStorage fallbacks or local saving for users, quizzes, or attempts.
 
-const APPS_SCRIPT_URL = import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL || ''
+function getAppsScriptUrl() {
+  return import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL || ''
+}
 
 async function callAppsScriptApi(action, payload = {}) {
-  if (!APPS_SCRIPT_URL) {
+  const appsScriptUrl = getAppsScriptUrl()
+
+  if (!appsScriptUrl) {
     throw new Error('Google Apps Script Web App URL is not configured. Please set VITE_GOOGLE_APPS_SCRIPT_URL in your environment.')
   }
 
   try {
     // Append ?action= to the request URL to ensure action is preserved even across Google Apps Script HTTP redirects
-    const delimiter = APPS_SCRIPT_URL.includes('?') ? '&' : '?'
-    const requestUrl = `${APPS_SCRIPT_URL}${delimiter}action=${encodeURIComponent(action)}`
+    const delimiter = appsScriptUrl.includes('?') ? '&' : '?'
+    const requestUrl = `${appsScriptUrl}${delimiter}action=${encodeURIComponent(action)}`
 
     const response = await fetch(requestUrl, {
       method: 'POST',

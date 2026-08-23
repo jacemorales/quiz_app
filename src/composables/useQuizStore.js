@@ -115,14 +115,22 @@ export function useQuizStore() {
 
     let totalAttempts = 0
     let totalCompleted = 0
-    let totalScoreSum = 0
     let mostPopularQuiz = null
     let maxAttempts = -1
+    let totalWeightedScore = 0
+    let recentActivityList = []
 
-    userQuizzes.forEach(quiz => {
+    // Fetch analytics for user's quizzes to calculate average score and recent activity
+    const analyticsPromises = userQuizzes.map(quiz =>
+      apiGetQuizAnalytics(quiz.quizId, userId).catch(() => null)
+    )
+    const analyticsResults = await Promise.all(analyticsPromises)
+
+    userQuizzes.forEach((quiz, idx) => {
       const atts = quiz.attemptCount || 0
       totalAttempts += atts
       totalCompleted += atts
+
       if (atts > maxAttempts) {
         maxAttempts = atts
         mostPopularQuiz = {
@@ -131,17 +139,35 @@ export function useQuizStore() {
           attemptCount: atts
         }
       }
+
+      const analytics = analyticsResults[idx]
+      if (analytics) {
+        if (analytics.totalAttempts > 0) {
+          totalWeightedScore += (analytics.avgScore || 0) * analytics.totalAttempts
+        }
+        if (Array.isArray(analytics.recentAttempts)) {
+          analytics.recentAttempts.forEach(att => {
+            recentActivityList.push({
+              attemptId: att.attemptId,
+              quizTitle: quiz.title,
+              quizId: quiz.quizId,
+              submittedAt: att.submittedAt,
+              score: att.correctCount,
+              totalQuestions: att.totalQuestions
+            })
+          })
+        }
+      }
     })
 
     if (maxAttempts <= 0) {
       mostPopularQuiz = null
     }
 
-    let avgScore = 0
-    if (totalQuizzes > 0 && totalAttempts > 0) {
-      // Calculate from individual analytics if needed or summary
-      // We will summarize avg score from analytics calls if needed, or estimated
-    }
+    const avgScore = totalAttempts > 0 ? Math.round(totalWeightedScore / totalAttempts) : 0
+
+    recentActivityList.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
+    const recentActivity = recentActivityList.slice(0, 5)
 
     return {
       totalQuizzes,
@@ -150,7 +176,7 @@ export function useQuizStore() {
       totalCompleted,
       avgScore,
       mostPopularQuiz,
-      recentActivity: []
+      recentActivity
     }
   }
 
