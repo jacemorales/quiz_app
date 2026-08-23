@@ -15,8 +15,12 @@ var QUIZ_SPREADSHEET_ID = '1KJeB29Iyg-JBM-NvgYEt9yPFU8SRNqf1XehCD6Phmho';
 function doGet(e) {
   try {
     var params = e ? e.parameter : {};
-    var action = params.action || 'ping';
-    var data = params.data ? JSON.parse(params.data) : params;
+    var action = params.action || '';
+    var data = params.data ? (typeof params.data === 'string' ? JSON.parse(params.data) : params.data) : params;
+
+    if (!action) {
+      action = 'ping';
+    }
 
     var result = handleAction(action, data);
     return createJsonResponse(result);
@@ -30,9 +34,25 @@ function doGet(e) {
  */
 function doPost(e) {
   try {
-    var contents = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
-    var action = contents.action || (e ? e.parameter.action : '');
+    var contents = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        contents = JSON.parse(e.postData.contents);
+      } catch (pErr) {
+        contents = {};
+      }
+    }
+
+    var queryParams = e ? e.parameter : {};
+    var action = contents.action || queryParams.action || '';
     var data = contents.data || contents;
+
+    if (!action) {
+      return createJsonResponse({
+        success: false,
+        error: 'Missing action parameter in request. Please check Web App URL configuration.'
+      });
+    }
 
     var result = handleAction(action, data);
     return createJsonResponse(result);
@@ -85,7 +105,7 @@ function handleAction(action, data) {
       return getAnalytics(data);
 
     default:
-      return { success: false, error: 'Invalid action: ' + action };
+      return { success: false, error: 'Invalid or unknown action: ' + action };
   }
 }
 

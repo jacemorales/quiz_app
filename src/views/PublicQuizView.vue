@@ -90,7 +90,9 @@ function startFlow() {
 function handleParticipantInfoSubmit() {
   if (Array.isArray(quiz.value.participantFields)) {
     for (const f of quiz.value.participantFields) {
-      if (f.required && !participantData[f.fieldName]?.trim()) {
+      const val = participantData[f.fieldName]
+      const strVal = val !== undefined && val !== null ? String(val).trim() : ''
+      if (f.required && !strVal) {
         alert(`Please fill in required field: ${f.fieldName}`)
         return
       }

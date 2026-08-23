@@ -41,7 +41,6 @@ function handleLogout() {
         <nav class="header-nav desktop-nav">
           <template v-if="isAuthenticated">
             <router-link to="/dashboard" class="nav-link">Dashboard</router-link>
-            <router-link to="/create-quiz" class="btn btn-primary btn-sm">+ Create Quiz</router-link>
 
             <div class="user-profile-menu">
               <span class="user-name">👤 {{ user?.name }}</span>
@@ -77,9 +76,6 @@ function handleLogout() {
             </div>
             <router-link to="/dashboard" class="mobile-nav-link" @click="mobileMenuOpen = false">
               📊 Dashboard
-            </router-link>
-            <router-link to="/create-quiz" class="mobile-nav-link primary-link" @click="mobileMenuOpen = false">
-              ➕ Create Quiz
             </router-link>
             <button @click="handleLogout" class="mobile-nav-link danger-link">
               🚪 Log Out

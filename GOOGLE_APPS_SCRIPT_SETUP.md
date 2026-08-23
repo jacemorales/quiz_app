@@ -4,6 +4,16 @@ This document explains step-by-step how to deploy the Google Apps Script backend
 
 ---
 
+## ⚠️ Important Note on Spreadsheet Setup & `Code.gs` Location
+
+**Will BOTH the User Spreadsheet and Quiz Spreadsheet be updated?**
+
+**YES! Absolutely.** You only need to paste `Code.gs` into **ONE** Google Apps Script project (for example, attached to the User Spreadsheet, or as a standalone script).
+
+Because `Code.gs` opens both spreadsheets directly by their unique Spreadsheet IDs (`SpreadsheetApp.openById(...)`), **both the User Spreadsheet and the Quiz Spreadsheet will be updated automatically** during user registration, quiz creation, attempt submissions, and analytics fetching. You do **NOT** need to duplicate or split the script across two separate Apps Script projects.
+
+---
+
 ## Google Spreadsheet IDs
 
 The application uses two Google Spreadsheets as persistent databases:
@@ -18,8 +28,8 @@ The application uses two Google Spreadsheets as persistent databases:
 
 ## Step 1: Open Google Apps Script
 
-1. Open one of your Google Spreadsheets (or go directly to [script.google.com](https://script.google.com)).
-2. In the Spreadsheet top menu bar, click:
+1. Open your **User Spreadsheet** (or Quiz Spreadsheet, or go directly to [script.google.com](https://script.google.com)).
+2. In the top menu bar, click:
    **Extensions → Apps Script**
 
 ---
@@ -42,7 +52,7 @@ var USER_SPREADSHEET_ID = '1KC9kf3igF8xRm1MVaSmUhqCjLKJWArH-iKeYhBBVwnw';
 var QUIZ_SPREADSHEET_ID = '1KJeB29Iyg-JBM-NvgYEt9yPFU8SRNqf1XehCD6Phmho';
 ```
 
-*(Note: If Google Apps Script prompts for permissions when executing, run `ensureSheetStructures()` once manually inside the editor to authorize spreadsheet access.)*
+*(Note: If Google Apps Script prompts for permissions when executing or deploying, grant authorization so the script can access both spreadsheets).*
 
 ---
 
@@ -55,7 +65,7 @@ var QUIZ_SPREADSHEET_ID = '1KJeB29Iyg-JBM-NvgYEt9yPFU8SRNqf1XehCD6Phmho';
    - **Execute as**: `Me (your email address)`
    - **Who has access**: `Anyone` *(Required so participants & users can access the API without logging into Google)*
 4. Click **Deploy**.
-5. Grant permissions if prompted by Google.
+5. Grant permissions if prompted by Google (click *Advanced* → *Go to Quiz Hub Backend API (unsafe)* → *Allow*).
 6. Copy the generated **Web App URL** (it looks like `https://script.google.com/macros/s/.../exec`).
 
 ---
@@ -68,7 +78,7 @@ var QUIZ_SPREADSHEET_ID = '1KJeB29Iyg-JBM-NvgYEt9yPFU8SRNqf1XehCD6Phmho';
 VITE_GOOGLE_APPS_SCRIPT_URL=https://script.google.com/macros/s/YOUR_DEPLOYED_SCRIPT_ID/exec
 ```
 
-2. Replace `YOUR_DEPLOYED_SCRIPT_ID` with your actual Apps Script deployment URL.
+2. Replace `YOUR_DEPLOYED_SCRIPT_ID` with your actual Apps Script deployment Web App URL.
 
 ---
 
@@ -85,10 +95,12 @@ Perform this complete verification sequence:
 3. **Create Quiz**:
    Click **+ Create Quiz**, fill out details, add questions, set navigation settings, and click **Generate Quiz**.
 4. **Verify Google Sheets**:
-   Check your Google Spreadsheets (`Users`, `Quizzes`, `Questions`, `Options`). You will see the new user and quiz records appended!
+   Check both of your Google Spreadsheets:
+   - **User Spreadsheet**: Users sheet will contain your user record.
+   - **Quiz Spreadsheet**: Quizzes, Questions, Options sheets will contain your quiz structure!
 5. **Persistence Check**:
    Refresh your browser, log back in, and verify that your quiz is still present on the Dashboard.
 6. **Take & Submit Quiz**:
    Open the generated public Quiz URL, answer the questions, and submit.
 7. **Verify Analytics & Attempts**:
-   Check the `Attempts` and `Answers` sheets in Google Sheets, then open the **Analytics** page in Quiz Hub to confirm attempt results are reflected.
+   Check the `Attempts` and `Answers` sheets in the Quiz Spreadsheet, then open the **Analytics** page in Quiz Hub to confirm attempt results are reflected.
