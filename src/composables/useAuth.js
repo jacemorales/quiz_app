@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
-import { getLocalUsers, saveUserLocal } from '../services/googleSheetsService'
+import { apiRegisterUser, apiLoginUser } from '../services/googleSheetsService'
 
-const CURRENT_USER_KEY = 'quizapp_current_user'
+const CURRENT_USER_SESSION_KEY = 'quizapp_session_user'
 
 const currentUser = ref(null)
 const loading = ref(false)
@@ -20,7 +20,7 @@ export function useAuth() {
 
   function checkAuth() {
     try {
-      const stored = localStorage.getItem(CURRENT_USER_KEY)
+      const stored = sessionStorage.getItem(CURRENT_USER_SESSION_KEY) || localStorage.getItem(CURRENT_USER_SESSION_KEY)
       if (stored) {
         currentUser.value = JSON.parse(stored)
         return true
@@ -45,36 +45,28 @@ export function useAuth() {
         throw new Error('Password must be at least 6 characters long')
       }
 
-      const users = getLocalUsers()
-      const existing = users.find(u => u.email.toLowerCase() === email.trim().toLowerCase())
-
-      if (existing) {
-        throw new Error('An account with this email already exists')
-      }
-
-      const newUser = {
-        userId: generateUserId(),
+      const userId = generateUserId()
+      const registeredUser = await apiRegisterUser({
+        userId,
         name: name.trim(),
         email: email.trim().toLowerCase(),
-        password: password, // client-side session store
-        createdAt: new Date().toISOString()
-      }
-
-      saveUserLocal(newUser)
+        password: password
+      })
 
       const sessionUser = {
-        userId: newUser.userId,
-        name: newUser.name,
-        email: newUser.email,
-        createdAt: newUser.createdAt
+        userId: registeredUser.userId,
+        name: registeredUser.name,
+        email: registeredUser.email,
+        createdAt: registeredUser.createdAt
       }
 
       currentUser.value = sessionUser
-      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(sessionUser))
+      sessionStorage.setItem(CURRENT_USER_SESSION_KEY, JSON.stringify(sessionUser))
+      localStorage.setItem(CURRENT_USER_SESSION_KEY, JSON.stringify(sessionUser))
 
       return sessionUser
     } catch (err) {
-      error.value = err.message
+      error.value = err.message || 'Unable to register. Please try again.'
       throw err
     } finally {
       loading.value = false
@@ -90,26 +82,22 @@ export function useAuth() {
         throw new Error('Email and password are required')
       }
 
-      const users = getLocalUsers()
-      const found = users.find(u => u.email.toLowerCase() === email.trim().toLowerCase())
-
-      if (!found || found.password !== password) {
-        throw new Error('Invalid email or password')
-      }
+      const authenticatedUser = await apiLoginUser(email.trim().toLowerCase(), password)
 
       const sessionUser = {
-        userId: found.userId,
-        name: found.name,
-        email: found.email,
-        createdAt: found.createdAt
+        userId: authenticatedUser.userId,
+        name: authenticatedUser.name,
+        email: authenticatedUser.email,
+        createdAt: authenticatedUser.createdAt
       }
 
       currentUser.value = sessionUser
-      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(sessionUser))
+      sessionStorage.setItem(CURRENT_USER_SESSION_KEY, JSON.stringify(sessionUser))
+      localStorage.setItem(CURRENT_USER_SESSION_KEY, JSON.stringify(sessionUser))
 
       return sessionUser
     } catch (err) {
-      error.value = err.message
+      error.value = err.message || 'Unable to log in. Please check your credentials.'
       throw err
     } finally {
       loading.value = false
@@ -118,7 +106,8 @@ export function useAuth() {
 
   function logout() {
     currentUser.value = null
-    localStorage.removeItem(CURRENT_USER_KEY)
+    sessionStorage.removeItem(CURRENT_USER_SESSION_KEY)
+    localStorage.removeItem(CURRENT_USER_SESSION_KEY)
   }
 
   return {

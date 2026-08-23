@@ -1,16 +1,28 @@
 <script setup>
-import { onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, watch, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from './composables/useAuth'
 
 const router = useRouter()
+const route = useRoute()
 const { user, isAuthenticated, logout, checkAuth } = useAuth()
+
+const mobileMenuOpen = ref(false)
 
 onMounted(() => {
   checkAuth()
 })
 
+watch(route, () => {
+  mobileMenuOpen.value = false
+})
+
+function toggleMobileMenu() {
+  mobileMenuOpen.value = !mobileMenuOpen.value
+}
+
 function handleLogout() {
+  mobileMenuOpen.value = false
   logout()
   router.push('/login')
 }
@@ -20,12 +32,13 @@ function handleLogout() {
   <div class="app-shell">
     <header class="app-header">
       <div class="header-container">
-        <router-link to="/" class="brand-logo">
+        <router-link to="/" class="brand-logo" @click="mobileMenuOpen = false">
           <div class="logo-icon">Q</div>
-          <span class="logo-text">Quiz <span class="logo-highlight">App</span></span>
+          <span class="logo-text">Quiz <span class="logo-highlight">Hub</span></span>
         </router-link>
 
-        <nav class="header-nav">
+        <!-- Desktop Navigation -->
+        <nav class="header-nav desktop-nav">
           <template v-if="isAuthenticated">
             <router-link to="/dashboard" class="nav-link">Dashboard</router-link>
             <router-link to="/create-quiz" class="btn btn-primary btn-sm">+ Create Quiz</router-link>
@@ -40,7 +53,48 @@ function handleLogout() {
             <router-link to="/register" class="btn btn-primary btn-sm">Get Started</router-link>
           </template>
         </nav>
+
+        <!-- Mobile Hamburger Button -->
+        <button
+          @click="toggleMobileMenu"
+          class="mobile-menu-toggle"
+          :aria-expanded="mobileMenuOpen"
+          aria-label="Toggle Navigation Menu"
+        >
+          <span class="hamburger-line" :class="{ open: mobileMenuOpen }"></span>
+          <span class="hamburger-line" :class="{ open: mobileMenuOpen }"></span>
+          <span class="hamburger-line" :class="{ open: mobileMenuOpen }"></span>
+        </button>
       </div>
+
+      <!-- Mobile Dropdown Navigation Drawer -->
+      <transition name="slide-down">
+        <div v-if="mobileMenuOpen" class="mobile-nav-drawer">
+          <template v-if="isAuthenticated">
+            <div class="mobile-user-info">
+              <span class="user-name">👤 {{ user?.name }}</span>
+              <span class="user-email">{{ user?.email }}</span>
+            </div>
+            <router-link to="/dashboard" class="mobile-nav-link" @click="mobileMenuOpen = false">
+              📊 Dashboard
+            </router-link>
+            <router-link to="/create-quiz" class="mobile-nav-link primary-link" @click="mobileMenuOpen = false">
+              ➕ Create Quiz
+            </router-link>
+            <button @click="handleLogout" class="mobile-nav-link danger-link">
+              🚪 Log Out
+            </button>
+          </template>
+          <template v-else>
+            <router-link to="/login" class="mobile-nav-link" @click="mobileMenuOpen = false">
+              🔑 Log In
+            </router-link>
+            <router-link to="/register" class="mobile-nav-link primary-link" @click="mobileMenuOpen = false">
+              🚀 Get Started
+            </router-link>
+          </template>
+        </div>
+      </transition>
     </header>
 
     <main class="app-main">
@@ -49,7 +103,7 @@ function handleLogout() {
 
     <footer class="app-footer">
       <div class="footer-container">
-        <p>© 2025 Quiz App. All rights reserved. Professional Online Quiz Platform.</p>
+        <p>© 2025 Quiz Hub. All rights reserved. Professional Online Quiz Platform.</p>
       </div>
     </footer>
   </div>
@@ -89,6 +143,11 @@ function handleLogout() {
   box-sizing: border-box;
 }
 
+html, body {
+  width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   background-color: var(--gray-50);
@@ -101,6 +160,8 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 .app-header {
@@ -108,8 +169,9 @@ body {
   border-bottom: 1px solid var(--gray-200);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 1000;
   box-shadow: var(--shadow-sm);
+  width: 100%;
 }
 
 .header-container {
@@ -119,6 +181,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
 }
 
 .brand-logo {
@@ -143,6 +206,7 @@ body {
   font-weight: 900;
   font-size: 1.2rem;
   box-shadow: 0 2px 4px rgba(22, 163, 74, 0.3);
+  flex-shrink: 0;
 }
 
 .logo-highlight {
@@ -160,7 +224,7 @@ body {
   color: var(--gray-600);
   font-weight: 600;
   font-size: 0.95rem;
-  padding: 6px 12px;
+  padding: 8px 14px;
   border-radius: var(--radius-sm);
   transition: all 0.2s;
 }
@@ -183,10 +247,92 @@ body {
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--gray-700);
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mobile Hamburger Toggle */
+.mobile-menu-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: space-around;
+  width: 38px;
+  height: 38px;
+  background: transparent;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  padding: 8px;
+  z-index: 1001;
+}
+
+.hamburger-line {
+  width: 100%;
+  height: 2px;
+  background-color: var(--gray-700);
+  transition: all 0.3s ease;
+  border-radius: 2px;
+}
+
+.mobile-nav-drawer {
+  display: flex;
+  flex-direction: column;
+  background: var(--white);
+  border-bottom: 1px solid var(--gray-200);
+  padding: 16px 24px;
+  gap: 12px;
+  box-shadow: var(--shadow);
+}
+
+.mobile-user-info {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.mobile-user-info .user-name {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--dark);
+}
+
+.mobile-user-info .user-email {
+  font-size: 0.825rem;
+  color: var(--gray-500);
+}
+
+.mobile-nav-link {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--gray-700);
+  background: var(--gray-50);
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.mobile-nav-link.primary-link {
+  background: var(--primary);
+  color: var(--white);
+}
+
+.mobile-nav-link.danger-link {
+  background: #fef2f2;
+  color: var(--danger);
 }
 
 .app-main {
   flex: 1;
+  width: 100%;
 }
 
 .app-footer {
@@ -197,6 +343,7 @@ body {
   text-align: center;
   color: var(--gray-500);
   font-size: 0.875rem;
+  width: 100%;
 }
 
 .footer-container {
@@ -205,7 +352,7 @@ body {
   padding: 0 24px;
 }
 
-/* Common UI Components */
+/* Common Buttons & Badges */
 
 .btn {
   display: inline-flex;
@@ -220,16 +367,20 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
   text-decoration: none;
+  touch-action: manipulation;
+  min-height: 40px;
 }
 
 .btn-sm {
-  padding: 6px 14px;
+  padding: 8px 14px;
   font-size: 0.875rem;
+  min-height: 36px;
 }
 
 .btn-lg {
   padding: 14px 28px;
   font-size: 1.05rem;
+  min-height: 48px;
 }
 
 .btn-primary {
@@ -240,7 +391,6 @@ body {
 
 .btn-primary:hover {
   background-color: var(--primary-hover);
-  transform: translateY(-1px);
 }
 
 .btn-secondary {
@@ -249,28 +399,15 @@ body {
   border-color: var(--gray-300);
 }
 
-.btn-secondary:hover {
-  background-color: var(--gray-200);
-}
-
 .btn-outline {
   background-color: transparent;
   color: var(--gray-700);
   border-color: var(--gray-300);
 }
 
-.btn-outline:hover {
-  background-color: var(--gray-100);
-  color: var(--dark);
-}
-
 .btn-danger {
   background-color: var(--danger);
   color: var(--white);
-}
-
-.btn-danger:hover {
-  background-color: #dc2626;
 }
 
 .badge {
@@ -304,8 +441,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 2000;
   padding: 16px;
+  overflow-y: auto;
 }
 
 .modal-card {
@@ -315,17 +453,21 @@ body {
   width: 100%;
   padding: 28px;
   box-shadow: var(--shadow-lg);
-  animation: modalIn 0.2s ease-out;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
-@keyframes modalIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
+@media (max-width: 768px) {
+  .desktop-nav {
+    display: none;
   }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
+
+  .mobile-menu-toggle {
+    display: flex;
+  }
+
+  .header-container {
+    padding: 10px 16px;
   }
 }
 </style>

@@ -13,7 +13,7 @@ const isEditing = computed(() => Boolean(route.params.quizId))
 const quizIdToEdit = computed(() => route.params.quizId || null)
 
 const currentStep = ref(1)
-const totalSteps = 6
+const totalSteps = 7
 
 const saving = ref(false)
 const loadingQuiz = ref(false)
@@ -31,6 +31,7 @@ const quizForm = reactive({
     { fieldName: 'Email Address', fieldType: 'email', required: true }
   ],
   showScore: true,
+  allowPreviousQuestions: true,
   questions: [
     {
       questionId: `q_${Math.random().toString(36).substring(2, 9)}`,
@@ -55,11 +56,14 @@ function showToast(msg) {
   }, 3000)
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (isEditing.value && quizIdToEdit.value) {
     loadingQuiz.value = true
     try {
-      const quiz = getQuizById(quizIdToEdit.value)
+      if (!user.value) {
+        throw new Error('Please log in to edit quizzes')
+      }
+      const quiz = await getQuizById(quizIdToEdit.value, user.value.userId)
       if (!quiz) {
         throw new Error('Quiz not found for editing')
       }
@@ -76,6 +80,7 @@ onMounted(() => {
             { fieldName: 'Email Address', fieldType: 'email', required: true }
           ]
       quizForm.showScore = quiz.showScore !== undefined ? Boolean(quiz.showScore) : true
+      quizForm.allowPreviousQuestions = quiz.allowPreviousQuestions !== undefined ? Boolean(quiz.allowPreviousQuestions) : true
 
       if (Array.isArray(quiz.questions) && quiz.questions.length > 0) {
         quizForm.questions = quiz.questions.map(q => ({
@@ -133,7 +138,7 @@ function nextStep() {
     }
   }
 
-  if (currentStep.value === 5) {
+  if (currentStep.value === 6) {
     if (quizForm.questions.length === 0) {
       wizardError.value = 'Quiz must contain at least one question'
       return
@@ -242,7 +247,7 @@ function removeOption(qIndex, oIndex) {
 
 // --- Submit / Generate Quiz ---
 
-function handleGenerateQuiz() {
+async function handleGenerateQuiz() {
   wizardError.value = ''
   saving.value = true
 
@@ -252,7 +257,7 @@ function handleGenerateQuiz() {
     }
 
     if (isEditing.value && quizIdToEdit.value) {
-      const updated = updateQuiz(quizIdToEdit.value, quizForm, user.value.userId)
+      const updated = await updateQuiz(quizIdToEdit.value, quizForm, user.value.userId)
       const fullUrl = `${window.location.origin}/quiz/${updated.quizId}`
       createdQuizResult.value = {
         quizId: updated.quizId,
@@ -260,7 +265,7 @@ function handleGenerateQuiz() {
         url: fullUrl
       }
     } else {
-      const { quiz: created, quizUrl } = createQuiz(quizForm, user.value.userId)
+      const { quiz: created, quizUrl } = await createQuiz(quizForm, user.value.userId)
       createdQuizResult.value = {
         quizId: created.quizId,
         title: created.title,
@@ -270,7 +275,7 @@ function handleGenerateQuiz() {
 
     showSuccessModal.value = true
   } catch (err) {
-    wizardError.value = err.message || 'Error saving quiz'
+    wizardError.value = err.message || 'Error saving quiz. Please check your network and Google Apps Script configuration.'
   } finally {
     saving.value = false
   }
@@ -323,8 +328,9 @@ function goToDashboard() {
             <template v-else-if="s === 2">Timer</template>
             <template v-else-if="s === 3">Participants</template>
             <template v-else-if="s === 4">Score</template>
-            <template v-else-if="s === 5">Questions</template>
-            <template v-else-if="s === 6">Review</template>
+            <template v-else-if="s === 5">Navigation</template>
+            <template v-else-if="s === 6">Questions</template>
+            <template v-else-if="s === 7">Review</template>
           </span>
         </div>
       </div>
@@ -529,9 +535,33 @@ function goToDashboard() {
           </div>
         </div>
 
-        <!-- STEP 5: QUESTION BUILDER -->
+        <!-- STEP 5: PREVIOUS QUESTION NAVIGATION SETTING -->
         <div v-if="currentStep === 5" class="step-content">
-          <h2 class="step-title">Step 5: Quiz Question Builder</h2>
+          <h2 class="step-title">Step 5: Question Navigation Settings</h2>
+          <p class="step-description">Allow participants to go back to previous questions?</p>
+
+          <div class="radio-options-grid">
+            <label :class="['radio-card', { selected: quizForm.allowPreviousQuestions === true }]">
+              <input type="radio" :value="true" v-model="quizForm.allowPreviousQuestions" />
+              <div class="radio-card-content">
+                <span class="radio-card-title">↩️ Yes (Allow Going Back)</span>
+                <span class="radio-card-sub">Participants can navigate backward through previous questions and modify their answers before submitting.</span>
+              </div>
+            </label>
+
+            <label :class="['radio-card', { selected: quizForm.allowPreviousQuestions === false }]">
+              <input type="radio" :value="false" v-model="quizForm.allowPreviousQuestions" />
+              <div class="radio-card-content">
+                <span class="radio-card-title">🚫 No (Forward Only)</span>
+                <span class="radio-card-sub">Once participants move to the next question, they cannot return to previous questions.</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- STEP 6: QUESTION BUILDER -->
+        <div v-if="currentStep === 6" class="step-content">
+          <h2 class="step-title">Step 6: Quiz Question Builder</h2>
           <p class="step-description">Add questions, specify answer options, and check correct answer(s).</p>
 
           <div class="questions-stack">
@@ -612,9 +642,9 @@ function goToDashboard() {
           </button>
         </div>
 
-        <!-- STEP 6: REVIEW BEFORE GENERATION -->
-        <div v-if="currentStep === 6" class="step-content">
-          <h2 class="step-title">Step 6: Review Before Generation</h2>
+        <!-- STEP 7: REVIEW BEFORE GENERATION -->
+        <div v-if="currentStep === 7" class="step-content">
+          <h2 class="step-title">Step 7: Review Before Generation</h2>
           <p class="step-description">Verify all quiz details and questions before publishing.</p>
 
           <div class="review-summary-card">
@@ -649,6 +679,10 @@ function goToDashboard() {
               <div class="review-item">
                 <span class="review-label">Score Visibility</span>
                 <span class="review-val">{{ quizForm.showScore ? 'Show Score' : 'Thank You Screen' }}</span>
+              </div>
+              <div class="review-item">
+                <span class="review-label">Previous Questions</span>
+                <span class="review-val">{{ quizForm.allowPreviousQuestions ? 'Allowed' : 'Not Allowed (Forward Only)' }}</span>
               </div>
             </div>
           </div>
@@ -784,6 +818,7 @@ function goToDashboard() {
   padding: 12px;
   border-radius: var(--radius);
   border: 1px solid var(--gray-200);
+  overflow-x: auto;
 }
 
 .step-pill {
@@ -797,6 +832,7 @@ function goToDashboard() {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .step-pill.active {
@@ -817,6 +853,7 @@ function goToDashboard() {
   align-items: center;
   justify-content: center;
   font-size: 0.8rem;
+  flex-shrink: 0;
 }
 
 .step-pill.active .step-num {
@@ -887,6 +924,7 @@ function goToDashboard() {
   border-radius: var(--radius-sm);
   font-size: 0.95rem;
   transition: all 0.2s;
+  width: 100%;
 }
 
 .form-control:focus {
@@ -1180,6 +1218,12 @@ function goToDashboard() {
 }
 
 @media (max-width: 640px) {
+  .builder-page {
+    padding: 16px 12px;
+  }
+  .step-card {
+    padding: 20px 16px;
+  }
   .step-pill .step-name {
     display: none;
   }
@@ -1189,6 +1233,9 @@ function goToDashboard() {
   .field-item-card {
     flex-direction: column;
     align-items: stretch;
+  }
+  .url-input-group {
+    flex-direction: column;
   }
 }
 </style>

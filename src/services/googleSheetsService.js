@@ -1,148 +1,104 @@
-// Client-side Google Sheets & Storage Service for Quiz App
+// Frontend Service communicating directly with Google Apps Script Backend API
+// No localStorage fallbacks or local saving for users, quizzes, or attempts.
 
-export const USER_SPREADSHEET_ID = '1KC9kf3igF8xRm1MVaSmUhqCjLKJWArH-iKeYhBBVwnw'
-export const QUIZ_SPREADSHEET_ID = '1KJeB29Iyg-JBM-NvgYEt9yPFU8SRNqf1XehCD6Phmho'
+const APPS_SCRIPT_URL = import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL || ''
 
-const STORAGE_KEYS = {
-  USERS: 'quizapp_users',
-  QUIZZES: 'quizapp_quizzes',
-  ATTEMPTS: 'quizapp_attempts',
-  CURRENT_USER: 'quizapp_current_user'
-}
-
-// Initial Local Storage Helpers
-function getStored(key) {
-  try {
-    const data = localStorage.getItem(key)
-    return data ? JSON.parse(data) : []
-  } catch (err) {
-    console.error(`Error reading ${key} from localStorage:`, err)
-    return []
+async function callAppsScriptApi(action, payload = {}) {
+  if (!APPS_SCRIPT_URL) {
+    throw new Error('Google Apps Script Web App URL is not configured. Please set VITE_GOOGLE_APPS_SCRIPT_URL in your environment.')
   }
-}
 
-function setStored(key, value) {
   try {
-    localStorage.setItem(key, JSON.stringify(value))
-  } catch (err) {
-    console.error(`Error saving ${key} to localStorage:`, err)
-  }
-}
-
-// --- Google Sheets Sync Helpers ---
-// Syncs data asynchronously to Google Sheets if API Key or Web App URL is provided
-async function appendToGoogleSheet(spreadsheetId, range, values) {
-  const apiKey = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY
-  const webAppUrl = import.meta.env.VITE_GOOGLE_SHEETS_WEBAPP_URL
-
-  if (webAppUrl) {
-    try {
-      await fetch(webAppUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spreadsheetId, range, values }),
-        mode: 'no-cors'
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: JSON.stringify({
+        action,
+        data: payload
       })
-    } catch (err) {
-      console.warn('Google Sheets Web App sync failed:', err.message)
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
     }
-  } else if (apiKey) {
-    try {
-      await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED&key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ values })
-        }
-      )
-    } catch (err) {
-      console.warn('Google Sheets API append failed:', err.message)
+
+    const result = await response.json()
+
+    if (!result.success) {
+      throw new Error(result.error || 'Unable to save your data right now. Please check your connection and try again.')
     }
+
+    return result
+  } catch (err) {
+    console.error(`Google Apps Script API error [${action}]:`, err)
+    if (err.message && !err.message.includes('not configured')) {
+      throw new Error(err.message || 'Unable to save your data right now. Please check your connection and try again.')
+    }
+    throw err
   }
 }
 
-// --- User Storage Operations ---
-export function getLocalUsers() {
-  return getStored(STORAGE_KEYS.USERS)
+// --- User Operations ---
+
+export async function apiRegisterUser(user) {
+  const res = await callAppsScriptApi('createUser', user)
+  return res.user
 }
 
-export function saveUserLocal(user) {
-  const users = getLocalUsers()
-  users.push(user)
-  setStored(STORAGE_KEYS.USERS, users)
-
-  // Asynchronously sync to User Spreadsheet: 1KC9kf3igF8xRm1MVaSmUhqCjLKJWArH-iKeYhBBVwnw
-  appendToGoogleSheet(USER_SPREADSHEET_ID, 'Users!A:D', [
-    [user.userId, user.name, user.email, user.createdAt]
-  ])
+export async function apiLoginUser(email, password) {
+  const res = await callAppsScriptApi('loginUser', { email, password })
+  return res.user
 }
 
-// --- Quiz Storage Operations ---
-export function getLocalQuizzes() {
-  return getStored(STORAGE_KEYS.QUIZZES)
+export async function apiGetUser(userId) {
+  const res = await callAppsScriptApi('getUser', { userId })
+  return res.user
 }
 
-export function saveQuizLocal(quiz) {
-  const quizzes = getLocalQuizzes()
-  const existingIdx = quizzes.findIndex(q => q.quizId === quiz.quizId)
-  if (existingIdx !== -1) {
-    quizzes[existingIdx] = quiz
-  } else {
-    quizzes.push(quiz)
-  }
-  setStored(STORAGE_KEYS.QUIZZES, quizzes)
+// --- Quiz Operations ---
 
-  // Asynchronously sync to Quiz Spreadsheet: 1KJeB29Iyg-JBM-NvgYEt9yPFU8SRNqf1XehCD6Phmho
-  appendToGoogleSheet(QUIZ_SPREADSHEET_ID, 'Quizzes!A:K', [
-    [
-      quiz.quizId,
-      quiz.userId,
-      quiz.title,
-      quiz.description || '',
-      quiz.timerType || 'none',
-      quiz.timerDuration || 0,
-      quiz.anonymous,
-      JSON.stringify(quiz.participantFields || []),
-      quiz.showScore,
-      quiz.status || 'active',
-      quiz.createdAt
-    ]
-  ])
+export async function apiCreateQuiz(quizData) {
+  const res = await callAppsScriptApi('createQuiz', quizData)
+  return res.quiz
 }
 
-export function deleteQuizLocal(quizId) {
-  const quizzes = getLocalQuizzes()
-  const updated = quizzes.map(q => {
-    if (q.quizId === quizId) {
-      return { ...q, status: 'deleted' }
-    }
-    return q
+export async function apiGetQuiz(quizId, userId = null) {
+  const res = await callAppsScriptApi('getQuiz', { quizId, userId })
+  return res.quiz
+}
+
+export async function apiGetUserQuizzes(userId) {
+  const res = await callAppsScriptApi('getUserQuizzes', { userId })
+  return res.quizzes || []
+}
+
+export async function apiUpdateQuiz(quizId, quizData, userId) {
+  const res = await callAppsScriptApi('updateQuiz', { ...quizData, quizId, userId })
+  return res.quiz
+}
+
+export async function apiDeleteQuiz(quizId, userId) {
+  const res = await callAppsScriptApi('deleteQuiz', { quizId, userId })
+  return res.success
+}
+
+// --- Attempt & Submission Operations ---
+
+export async function apiSubmitQuizAttempt(quizId, participantData, answers, completionTimeSeconds) {
+  const res = await callAppsScriptApi('submitQuiz', {
+    quizId,
+    participantData,
+    answers,
+    completionTimeSeconds
   })
-  setStored(STORAGE_KEYS.QUIZZES, updated)
+  return res
 }
 
-// --- Attempt Storage Operations ---
-export function getLocalAttempts() {
-  return getStored(STORAGE_KEYS.ATTEMPTS)
-}
+// --- Analytics Operations ---
 
-export function saveAttemptLocal(attempt) {
-  const attempts = getLocalAttempts()
-  attempts.push(attempt)
-  setStored(STORAGE_KEYS.ATTEMPTS, attempts)
-
-  // Asynchronously sync to Quiz Spreadsheet: 1KJeB29Iyg-JBM-NvgYEt9yPFU8SRNqf1XehCD6Phmho
-  appendToGoogleSheet(QUIZ_SPREADSHEET_ID, 'Responses!A:H', [
-    [
-      attempt.attemptId,
-      attempt.quizId,
-      JSON.stringify(attempt.participantData || {}),
-      attempt.score,
-      attempt.correctCount,
-      attempt.totalQuestions,
-      attempt.completionTimeSeconds,
-      attempt.submittedAt
-    ]
-  ])
+export async function apiGetQuizAnalytics(quizId, userId) {
+  const res = await callAppsScriptApi('getAnalytics', { quizId, userId })
+  return res.analytics
 }
