@@ -36,7 +36,7 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters long' })
     }
 
-    const existing = findUserByEmail(email)
+    const existing = await findUserByEmail(email)
     if (existing) {
       return res.status(400).json({ error: 'An account with this email already exists' })
     }
@@ -44,7 +44,7 @@ app.post('/api/auth/register', async (req, res) => {
     const userId = `usr_${crypto.randomBytes(12).toString('hex')}`
     const passwordHash = await hashPassword(password)
 
-    const newUser = createUser({
+    const newUser = await createUser({
       userId,
       name: name.trim(),
       email: email.trim().toLowerCase(),
@@ -63,7 +63,7 @@ app.post('/api/auth/register', async (req, res) => {
     })
   } catch (err) {
     console.error('Registration error:', err)
-    res.status(500).json({ error: 'Failed to create account' })
+    res.status(500).json({ error: err.message || 'Failed to create account' })
   }
 })
 
@@ -75,7 +75,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' })
     }
 
-    const user = findUserByEmail(email)
+    const user = await findUserByEmail(email)
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
@@ -97,23 +97,28 @@ app.post('/api/auth/login', async (req, res) => {
     })
   } catch (err) {
     console.error('Login error:', err)
-    res.status(500).json({ error: 'Failed to log in' })
+    res.status(500).json({ error: err.message || 'Failed to log in' })
   }
 })
 
-app.get('/api/auth/me', authenticateToken, (req, res) => {
-  const user = findUserById(req.user.userId)
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' })
-  }
-  res.json({
-    user: {
-      userId: user.userId,
-      name: user.name,
-      email: user.email,
-      createdAt: user.createdAt
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    const user = await findUserById(req.user.userId)
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' })
     }
-  })
+    res.json({
+      user: {
+        userId: user.userId,
+        name: user.name,
+        email: user.email,
+        createdAt: user.createdAt
+      }
+    })
+  } catch (err) {
+    console.error('Get profile error:', err)
+    res.status(500).json({ error: err.message || 'Failed to fetch user profile' })
+  }
 })
 
 app.post('/api/auth/logout', (req, res) => {
@@ -122,27 +127,27 @@ app.post('/api/auth/logout', (req, res) => {
 
 // --- Dashboard & Quiz Management Routes ---
 
-app.get('/api/quizzes', authenticateToken, (req, res) => {
+app.get('/api/quizzes', authenticateToken, async (req, res) => {
   try {
-    const quizzes = getUserQuizzes(req.user.userId)
+    const quizzes = await getUserQuizzes(req.user.userId)
     res.json({ quizzes })
   } catch (err) {
     console.error('Get quizzes error:', err)
-    res.status(500).json({ error: 'Failed to retrieve quizzes' })
+    res.status(500).json({ error: err.message || 'Failed to retrieve quizzes' })
   }
 })
 
-app.get('/api/quizzes/stats', authenticateToken, (req, res) => {
+app.get('/api/quizzes/stats', authenticateToken, async (req, res) => {
   try {
-    const stats = getUserDashboardStats(req.user.userId)
+    const stats = await getUserDashboardStats(req.user.userId)
     res.json(stats)
   } catch (err) {
     console.error('Get stats error:', err)
-    res.status(500).json({ error: 'Failed to retrieve dashboard stats' })
+    res.status(500).json({ error: err.message || 'Failed to retrieve dashboard stats' })
   }
 })
 
-app.post('/api/quizzes', authenticateToken, (req, res) => {
+app.post('/api/quizzes', authenticateToken, async (req, res) => {
   try {
     const { title, description, timerType, timerDuration, anonymous, participantFields, showScore, questions } = req.body
 
@@ -154,7 +159,6 @@ app.post('/api/quizzes', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Quiz must contain at least one question' })
     }
 
-    // Validate timer values
     if (timerType && timerType !== 'none') {
       const duration = Number(timerDuration)
       if (isNaN(duration) || duration <= 0) {
@@ -162,7 +166,6 @@ app.post('/api/quizzes', authenticateToken, (req, res) => {
       }
     }
 
-    // Validate questions and options
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i]
       if (!q.questionText || !q.questionText.trim()) {
@@ -177,10 +180,9 @@ app.post('/api/quizzes', authenticateToken, (req, res) => {
       }
     }
 
-    // Generate long, random, unique Quiz ID e.g., qz_8f7d92ac41e9b7c3f2a6d91e5c8b4a7f
     const quizId = `qz_${crypto.randomBytes(16).toString('hex')}`
 
-    const newQuiz = createQuiz(
+    const newQuiz = await createQuiz(
       {
         quizId,
         title: title.trim(),
@@ -203,20 +205,19 @@ app.post('/api/quizzes', authenticateToken, (req, res) => {
     })
   } catch (err) {
     console.error('Create quiz error:', err)
-    res.status(500).json({ error: 'Failed to create quiz' })
+    res.status(500).json({ error: err.message || 'Failed to create quiz' })
   }
 })
 
-app.get('/api/quizzes/:quizId', authenticateToken, (req, res) => {
+app.get('/api/quizzes/:quizId', authenticateToken, async (req, res) => {
   try {
     const { quizId } = req.params
-    const quiz = getQuizById(quizId)
+    const quiz = await getQuizById(quizId)
 
     if (!quiz) {
       return res.status(404).json({ error: 'Quiz not found' })
     }
 
-    // Security check: verify ownership
     if (quiz.userId !== req.user.userId) {
       return res.status(403).json({ error: 'Unauthorized to access this quiz' })
     }
@@ -224,20 +225,19 @@ app.get('/api/quizzes/:quizId', authenticateToken, (req, res) => {
     res.json({ quiz })
   } catch (err) {
     console.error('Get quiz details error:', err)
-    res.status(500).json({ error: 'Failed to retrieve quiz details' })
+    res.status(500).json({ error: err.message || 'Failed to retrieve quiz details' })
   }
 })
 
-app.put('/api/quizzes/:quizId', authenticateToken, (req, res) => {
+app.put('/api/quizzes/:quizId', authenticateToken, async (req, res) => {
   try {
     const { quizId } = req.params
-    const existingQuiz = getQuizById(quizId)
+    const existingQuiz = await getQuizById(quizId)
 
     if (!existingQuiz) {
       return res.status(404).json({ error: 'Quiz not found' })
     }
 
-    // Security check: verify ownership
     if (existingQuiz.userId !== req.user.userId) {
       return res.status(403).json({ error: 'Unauthorized to edit this quiz' })
     }
@@ -252,7 +252,6 @@ app.put('/api/quizzes/:quizId', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Quiz must contain at least one question' })
     }
 
-    // Validate timer values
     if (timerType && timerType !== 'none') {
       const duration = Number(timerDuration)
       if (isNaN(duration) || duration <= 0) {
@@ -274,7 +273,7 @@ app.put('/api/quizzes/:quizId', authenticateToken, (req, res) => {
       }
     }
 
-    const updated = updateQuiz(
+    const updated = await updateQuiz(
       quizId,
       {
         title: title.trim(),
@@ -292,25 +291,24 @@ app.put('/api/quizzes/:quizId', authenticateToken, (req, res) => {
     res.json({ quiz: updated })
   } catch (err) {
     console.error('Update quiz error:', err)
-    res.status(500).json({ error: 'Failed to update quiz' })
+    res.status(500).json({ error: err.message || 'Failed to update quiz' })
   }
 })
 
-app.delete('/api/quizzes/:quizId', authenticateToken, (req, res) => {
+app.delete('/api/quizzes/:quizId', authenticateToken, async (req, res) => {
   try {
     const { quizId } = req.params
-    const quiz = getQuizById(quizId)
+    const quiz = await getQuizById(quizId)
 
     if (!quiz) {
       return res.status(404).json({ error: 'Quiz not found' })
     }
 
-    // Security check: verify ownership
     if (quiz.userId !== req.user.userId) {
       return res.status(403).json({ error: 'Unauthorized to delete this quiz' })
     }
 
-    const success = deleteQuiz(quizId, req.user.userId)
+    const success = await deleteQuiz(quizId, req.user.userId)
     if (!success) {
       return res.status(500).json({ error: 'Failed to delete quiz' })
     }
@@ -318,49 +316,47 @@ app.delete('/api/quizzes/:quizId', authenticateToken, (req, res) => {
     res.json({ success: true, message: 'Quiz deleted successfully' })
   } catch (err) {
     console.error('Delete quiz error:', err)
-    res.status(500).json({ error: 'Failed to delete quiz' })
+    res.status(500).json({ error: err.message || 'Failed to delete quiz' })
   }
 })
 
-app.get('/api/quizzes/:quizId/analytics', authenticateToken, (req, res) => {
+app.get('/api/quizzes/:quizId/analytics', authenticateToken, async (req, res) => {
   try {
     const { quizId } = req.params
-    const quiz = getQuizById(quizId)
+    const quiz = await getQuizById(quizId)
 
     if (!quiz) {
       return res.status(404).json({ error: 'Quiz not found' })
     }
 
-    // Security check: verify ownership
     if (quiz.userId !== req.user.userId) {
       return res.status(403).json({ error: 'Unauthorized to view analytics for this quiz' })
     }
 
-    const analytics = getQuizAnalytics(quizId, req.user.userId)
+    const analytics = await getQuizAnalytics(quizId, req.user.userId)
     res.json({ analytics })
   } catch (err) {
     console.error('Get analytics error:', err)
-    res.status(500).json({ error: 'Failed to retrieve analytics' })
+    res.status(500).json({ error: err.message || 'Failed to retrieve analytics' })
   }
 })
 
 // --- Public Quiz Taking Routes ---
 
-app.get('/api/public/quiz/:quizId', (req, res) => {
+app.get('/api/public/quiz/:quizId', async (req, res) => {
   try {
     const { quizId } = req.params
-    const quiz = getQuizById(quizId)
+    const quiz = await getQuizById(quizId)
 
     if (!quiz) {
       return res.status(404).json({ error: 'Quiz not found or has been deleted' })
     }
 
-    // Sanitize question options so correct answer flags are NOT revealed in public payload
     const sanitizedQuestions = quiz.questions.map(q => ({
       questionId: q.questionId,
       questionText: q.questionText,
       order: q.order,
-      options: q.options.map(o => ({
+      options: (q.options || []).map(o => ({
         optionId: o.optionId,
         optionText: o.optionText
       }))
@@ -381,14 +377,14 @@ app.get('/api/public/quiz/:quizId', (req, res) => {
     })
   } catch (err) {
     console.error('Get public quiz error:', err)
-    res.status(500).json({ error: 'Failed to load quiz' })
+    res.status(500).json({ error: err.message || 'Failed to load quiz' })
   }
 })
 
-app.post('/api/public/quiz/:quizId/submit', (req, res) => {
+app.post('/api/public/quiz/:quizId/submit', async (req, res) => {
   try {
     const { quizId } = req.params
-    const quiz = getQuizById(quizId)
+    const quiz = await getQuizById(quizId)
 
     if (!quiz) {
       return res.status(404).json({ error: 'Quiz not found or has been deleted' })
@@ -396,7 +392,6 @@ app.post('/api/public/quiz/:quizId/submit', (req, res) => {
 
     const { participantData, answers, completionTimeSeconds } = req.body
 
-    // Calculate score
     let correctCount = 0
     let incorrectCount = 0
     const processedAnswers = []
@@ -405,9 +400,8 @@ app.post('/api/public/quiz/:quizId/submit', (req, res) => {
       const userAns = (answers || []).find(a => a.questionId === question.questionId)
       const selectedOptionIds = userAns ? userAns.selectedOptionIds || [] : []
 
-      const correctOptionIds = question.options.filter(o => o.isCorrect).map(o => o.optionId)
+      const correctOptionIds = (question.options || []).filter(o => o.isCorrect).map(o => o.optionId)
 
-      // An answer is correct if all selected options are correct and all correct options were selected
       const isCorrect =
         correctOptionIds.length === selectedOptionIds.length &&
         correctOptionIds.every(id => selectedOptionIds.includes(id)) &&
@@ -431,7 +425,7 @@ app.post('/api/public/quiz/:quizId/submit', (req, res) => {
 
     const attemptId = `att_${crypto.randomBytes(12).toString('hex')}`
 
-    saveQuizAttempt({
+    const submitResult = await saveQuizAttempt({
       attemptId,
       quizId,
       userId: quiz.userId,
@@ -463,7 +457,7 @@ app.post('/api/public/quiz/:quizId/submit', (req, res) => {
     }
   } catch (err) {
     console.error('Quiz submit error:', err)
-    res.status(500).json({ error: 'Failed to submit quiz attempt' })
+    res.status(500).json({ error: err.message || 'Failed to submit quiz attempt' })
   }
 })
 
