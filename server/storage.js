@@ -1,300 +1,398 @@
-import fs from 'fs'
-import path from 'path'
-import { fileURLToPath } from 'url'
-import { appendUserToSheet, appendQuizToSheet, appendQuestionToSheet, appendAttemptToSheet } from './googleSheets.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const DATA_DIR = path.join(__dirname, '..', 'data')
-const DB_FILE = path.join(DATA_DIR, 'db.json')
-
-// Ensure data directory and file exist
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
-}
-
-const initialData = {
-  users: [],
-  quizzes: [],
-  questions: [],
-  options: [],
-  attempts: [],
-  answers: []
-}
-
-function loadDB() {
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), 'utf8')
-    return initialData
-  }
-  try {
-    const raw = fs.readFileSync(DB_FILE, 'utf8')
-    const parsed = JSON.parse(raw)
-    return {
-      users: parsed.users || [],
-      quizzes: parsed.quizzes || [],
-      questions: parsed.questions || [],
-      options: parsed.options || [],
-      attempts: parsed.attempts || [],
-      answers: parsed.answers || []
-    }
-  } catch (err) {
-    console.error('Error reading db file, re-initializing:', err)
-    return initialData
-  }
-}
-
-function saveDB(data) {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8')
-  } catch (err) {
-    console.error('Error saving db file:', err)
-  }
-}
+import {
+  USER_SPREADSHEET_ID,
+  QUIZ_SPREADSHEET_ID,
+  callAppsScriptApi,
+  getSheetRows,
+  appendSheetRow,
+  getSheetsClient
+} from './googleSheets.js'
 
 // User operations
-export function findUserByEmail(email) {
-  const db = loadDB()
-  return db.users.find(u => u.email.toLowerCase() === email.toLowerCase())
+
+export async function findUserByEmail(email) {
+  if (!email) return null
+  const emailClean = email.toString().trim().toLowerCase()
+
+  // Try Google Apps Script API first if configured
+  try {
+    const res = await callAppsScriptApi('getUser', { email: emailClean })
+    if (res && res.user) {
+      return res.user
+    }
+  } catch (err) {
+    // If action failed or not supported, continue to direct sheets fallback
+  }
+
+  // Direct Google Sheets API fallback
+  const rows = await getSheetRows(USER_SPREADSHEET_ID, 'Users')
+  const userRow = rows.find(u => u.email && u.email.toString().toLowerCase() === emailClean)
+  if (!userRow) return null
+
+  return {
+    userId: userRow.userId,
+    name: userRow.name,
+    email: userRow.email,
+    passwordHash: userRow.password,
+    createdAt: userRow.createdAt
+  }
 }
 
-export function findUserById(userId) {
-  const db = loadDB()
-  return db.users.find(u => u.userId === userId)
+export async function findUserById(userId) {
+  if (!userId) return null
+
+  try {
+    const res = await callAppsScriptApi('getUser', { userId })
+    if (res && res.user) {
+      return res.user
+    }
+  } catch (err) {
+    // Fallback to direct sheet reading
+  }
+
+  const rows = await getSheetRows(USER_SPREADSHEET_ID, 'Users')
+  const userRow = rows.find(u => u.userId === userId)
+  if (!userRow) return null
+
+  return {
+    userId: userRow.userId,
+    name: userRow.name,
+    email: userRow.email,
+    passwordHash: userRow.password,
+    createdAt: userRow.createdAt
+  }
 }
 
-export function createUser(userData) {
-  const db = loadDB()
+export async function createUser(userData) {
+  if (!userData.email || !userData.name) {
+    throw new Error('Name and email are required to create a user.')
+  }
+
+  const emailClean = userData.email.toString().trim().toLowerCase()
+
+  // Check if user already exists
+  const existing = await findUserByEmail(emailClean)
+  if (existing) {
+    throw new Error('An account with this email already exists.')
+  }
+
+  // Try Apps Script API first
+  const appsScriptRes = await callAppsScriptApi('createUser', {
+    userId: userData.userId,
+    name: userData.name.trim(),
+    email: emailClean,
+    password: userData.passwordHash || userData.password || ''
+  })
+
+  if (appsScriptRes && appsScriptRes.user) {
+    return appsScriptRes.user
+  }
+
+  // Direct Google Sheets API fallback
   const user = {
     userId: userData.userId,
-    name: userData.name,
-    email: userData.email,
-    passwordHash: userData.passwordHash,
+    name: userData.name.trim(),
+    email: emailClean,
+    passwordHash: userData.passwordHash || userData.password || '',
     createdAt: userData.createdAt || new Date().toISOString()
   }
-  db.users.push(user)
-  saveDB(db)
 
-  // Asynchronously append to Google Sheets
-  appendUserToSheet(user).catch(err => {
-    console.warn('Google Sheets user append warning:', err.message)
-  })
+  await appendSheetRow(USER_SPREADSHEET_ID, 'Users', [
+    user.userId,
+    user.name,
+    user.email,
+    user.passwordHash,
+    user.createdAt
+  ])
 
   return user
 }
 
 // Quiz operations
-export function getUserQuizzes(userId) {
-  const db = loadDB()
-  const userQuizzes = db.quizzes.filter(q => q.userId === userId && q.status !== 'deleted')
 
-  return userQuizzes.map(quiz => {
-    const questions = db.questions.filter(q => q.quizId === quiz.quizId)
-    const attempts = db.attempts.filter(a => a.quizId === quiz.quizId)
-    return {
-      ...quiz,
-      questionCount: questions.length,
-      attemptCount: attempts.length
+export async function getUserQuizzes(userId) {
+  if (!userId) throw new Error('User ID is required to fetch quizzes.')
+
+  const appsScriptRes = await callAppsScriptApi('getUserQuizzes', { userId })
+  if (appsScriptRes && Array.isArray(appsScriptRes.quizzes)) {
+    return appsScriptRes.quizzes
+  }
+
+  // Direct Google Sheets reading
+  const quizzes = await getSheetRows(QUIZ_SPREADSHEET_ID, 'Quizzes')
+  const questions = await getSheetRows(QUIZ_SPREADSHEET_ID, 'Questions')
+  const attempts = await getSheetRows(QUIZ_SPREADSHEET_ID, 'Attempts')
+
+  const userQuizzes = []
+
+  for (const q of quizzes) {
+    if (q.userId === userId && q.status !== 'deleted') {
+      const qCount = questions.filter(quest => quest.quizId === q.quizId).length
+      const attCount = attempts.filter(att => att.quizId === q.quizId).length
+
+      let participantFields = []
+      try {
+        participantFields = q.participantFields ? JSON.parse(q.participantFields) : []
+      } catch (e) {}
+
+      userQuizzes.push({
+        quizId: q.quizId,
+        userId: q.userId,
+        title: q.title,
+        description: q.description || '',
+        timerType: q.timerType || 'none',
+        timerDuration: Number(q.timerDuration) || 0,
+        anonymous: Boolean(q.anonymous),
+        participantFields,
+        showScore: q.showScore !== undefined ? Boolean(q.showScore) : true,
+        allowPreviousQuestions: q.allowPreviousQuestions !== undefined ? Boolean(q.allowPreviousQuestions) : true,
+        status: q.status || 'active',
+        createdAt: q.createdAt,
+        questionCount: qCount,
+        attemptCount: attCount
+      })
     }
-  })
+  }
+
+  return userQuizzes
 }
 
-export function getQuizById(quizId) {
-  const db = loadDB()
-  const quiz = db.quizzes.find(q => q.quizId === quizId && q.status !== 'deleted')
+export async function getQuizById(quizId) {
+  if (!quizId) throw new Error('Quiz ID is required.')
+
+  const appsScriptRes = await callAppsScriptApi('getQuiz', { quizId })
+  if (appsScriptRes && appsScriptRes.quiz) {
+    return appsScriptRes.quiz
+  }
+
+  // Direct Google Sheets reading
+  const quizzes = await getSheetRows(QUIZ_SPREADSHEET_ID, 'Quizzes')
+  const quiz = quizzes.find(q => q.quizId === quizId && q.status !== 'deleted')
   if (!quiz) return null
 
-  const questions = db.questions
-    .filter(q => q.quizId === quizId)
-    .sort((a, b) => a.order - b.order)
-    .map(q => {
-      const options = db.options.filter(o => o.questionId === q.questionId)
-      return {
-        ...q,
+  const questionsData = await getSheetRows(QUIZ_SPREADSHEET_ID, 'Questions')
+  const optionsData = await getSheetRows(QUIZ_SPREADSHEET_ID, 'Options')
+
+  const questions = []
+  for (const q of questionsData) {
+    if (q.quizId === quizId) {
+      const options = optionsData
+        .filter(o => o.questionId === q.questionId)
+        .map(o => ({
+          optionId: o.optionId,
+          optionText: o.optionText,
+          isCorrect: o.isCorrect === true || o.isCorrect === 'true' || o.isCorrect === 'TRUE'
+        }))
+
+      questions.push({
+        questionId: q.questionId,
+        quizId: q.quizId,
+        questionText: q.questionText,
+        order: Number(q.order) || 1,
         options
-      }
-    })
+      })
+    }
+  }
+
+  questions.sort((a, b) => a.order - b.order)
+
+  let participantFields = []
+  try {
+    participantFields = quiz.participantFields ? JSON.parse(quiz.participantFields) : []
+  } catch (e) {}
 
   return {
-    ...quiz,
+    quizId: quiz.quizId,
+    userId: quiz.userId,
+    title: quiz.title,
+    description: quiz.description || '',
+    timerType: quiz.timerType || 'none',
+    timerDuration: Number(quiz.timerDuration) || 0,
+    anonymous: Boolean(quiz.anonymous),
+    participantFields,
+    showScore: quiz.showScore !== undefined ? Boolean(quiz.showScore) : true,
+    allowPreviousQuestions: quiz.allowPreviousQuestions !== undefined ? Boolean(quiz.allowPreviousQuestions) : true,
+    status: quiz.status || 'active',
+    createdAt: quiz.createdAt,
+    updatedAt: quiz.updatedAt || quiz.createdAt,
     questions
   }
 }
 
-export function createQuiz(quizData, userId) {
-  const db = loadDB()
-  const quiz = {
-    quizId: quizData.quizId,
-    userId: userId,
-    title: quizData.title,
-    description: quizData.description || '',
-    timerType: quizData.timerType || 'none', // 'none' | 'question' | 'quiz'
-    timerDuration: Number(quizData.timerDuration) || 0,
-    anonymous: Boolean(quizData.anonymous),
-    participantFields: quizData.participantFields || [],
-    showScore: Boolean(quizData.showScore),
-    status: quizData.status || 'active',
-    createdAt: new Date().toISOString()
+export async function createQuiz(quizData, userId) {
+  if (!userId) throw new Error('User ID is required to create a quiz.')
+  if (!quizData.title) throw new Error('Quiz title is required.')
+
+  const payload = { ...quizData, userId }
+
+  const appsScriptRes = await callAppsScriptApi('createQuiz', payload)
+  if (appsScriptRes && appsScriptRes.quiz) {
+    return appsScriptRes.quiz
   }
 
-  db.quizzes.push(quiz)
+  // Direct Google Sheets append fallback
+  const quizId = quizData.quizId || `qz_${Math.random().toString(36).substring(2, 12)}`
+  const createdAt = new Date().toISOString()
 
-  // Add questions and options
+  await appendSheetRow(QUIZ_SPREADSHEET_ID, 'Quizzes', [
+    quizId,
+    userId,
+    quizData.title,
+    quizData.description || '',
+    quizData.timerType || 'none',
+    Number(quizData.timerDuration) || 0,
+    Boolean(quizData.anonymous),
+    JSON.stringify(quizData.participantFields || []),
+    quizData.showScore !== undefined ? Boolean(quizData.showScore) : true,
+    quizData.allowPreviousQuestions !== undefined ? Boolean(quizData.allowPreviousQuestions) : true,
+    'active',
+    createdAt,
+    createdAt
+  ])
+
   const questions = []
   if (Array.isArray(quizData.questions)) {
-    quizData.questions.forEach((qData, index) => {
-      const question = {
-        questionId: qData.questionId || `q_${Math.random().toString(36).substring(2, 10)}`,
-        quizId: quiz.quizId,
-        questionText: qData.questionText,
-        order: index + 1
-      }
-      db.questions.push(question)
+    for (let i = 0; i < quizData.questions.length; i++) {
+      const q = quizData.questions[i]
+      const questionId = q.questionId || `q_${Math.random().toString(36).substring(2, 10)}`
+      const order = i + 1
+
+      await appendSheetRow(QUIZ_SPREADSHEET_ID, 'Questions', [
+        questionId,
+        quizId,
+        q.questionText,
+        order
+      ])
 
       const options = []
-      if (Array.isArray(qData.options)) {
-        qData.options.forEach(oData => {
-          const option = {
-            optionId: oData.optionId || `opt_${Math.random().toString(36).substring(2, 10)}`,
-            questionId: question.questionId,
-            optionText: oData.optionText,
-            isCorrect: Boolean(oData.isCorrect)
-          }
-          db.options.push(option)
-          options.push(option)
-        })
+      if (Array.isArray(q.options)) {
+        for (const opt of q.options) {
+          const optionId = opt.optionId || `opt_${Math.random().toString(36).substring(2, 10)}`
+          const isCorrect = Boolean(opt.isCorrect)
+
+          await appendSheetRow(QUIZ_SPREADSHEET_ID, 'Options', [
+            optionId,
+            questionId,
+            opt.optionText,
+            isCorrect
+          ])
+
+          options.push({ optionId, optionText: opt.optionText, isCorrect })
+        }
       }
-      questions.push({ ...question, options })
-    })
+
+      questions.push({ questionId, quizId, questionText: q.questionText, order, options })
+    }
   }
 
-  saveDB(db)
-
-  // Append to Google Sheets
-  appendQuizToSheet(quiz).catch(err => console.warn('Google Sheets quiz append warning:', err.message))
-  questions.forEach(q => {
-    appendQuestionToSheet(q).catch(err => console.warn('Google Sheets question append warning:', err.message))
-  })
-
-  return { ...quiz, questions }
-}
-
-export function updateQuiz(quizId, quizData, userId) {
-  const db = loadDB()
-  const quizIndex = db.quizzes.findIndex(q => q.quizId === quizId && q.userId === userId && q.status !== 'deleted')
-  if (quizIndex === -1) return null
-
-  // Update quiz metadata
-  const updatedQuiz = {
-    ...db.quizzes[quizIndex],
+  return {
+    quizId,
+    userId,
     title: quizData.title,
     description: quizData.description || '',
     timerType: quizData.timerType || 'none',
     timerDuration: Number(quizData.timerDuration) || 0,
     anonymous: Boolean(quizData.anonymous),
     participantFields: quizData.participantFields || [],
-    showScore: Boolean(quizData.showScore),
-    status: quizData.status || 'active',
-    updatedAt: new Date().toISOString()
+    showScore: quizData.showScore !== undefined ? Boolean(quizData.showScore) : true,
+    allowPreviousQuestions: quizData.allowPreviousQuestions !== undefined ? Boolean(quizData.allowPreviousQuestions) : true,
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+    questions
   }
-  db.quizzes[quizIndex] = updatedQuiz
-
-  // Remove old questions and options for this quiz
-  const oldQuestions = db.questions.filter(q => q.quizId === quizId)
-  const oldQuestionIds = new Set(oldQuestions.map(q => q.questionId))
-
-  db.questions = db.questions.filter(q => q.quizId !== quizId)
-  db.options = db.options.filter(o => !oldQuestionIds.has(o.questionId))
-
-  // Re-add questions & options
-  const newQuestions = []
-  if (Array.isArray(quizData.questions)) {
-    quizData.questions.forEach((qData, index) => {
-      const question = {
-        questionId: qData.questionId || `q_${Math.random().toString(36).substring(2, 10)}`,
-        quizId: quizId,
-        questionText: qData.questionText,
-        order: index + 1
-      }
-      db.questions.push(question)
-
-      const options = []
-      if (Array.isArray(qData.options)) {
-        qData.options.forEach(oData => {
-          const option = {
-            optionId: oData.optionId || `opt_${Math.random().toString(36).substring(2, 10)}`,
-            questionId: question.questionId,
-            optionText: oData.optionText,
-            isCorrect: Boolean(oData.isCorrect)
-          }
-          db.options.push(option)
-          options.push(option)
-        })
-      }
-      newQuestions.push({ ...question, options })
-    })
-  }
-
-  saveDB(db)
-  return { ...updatedQuiz, questions: newQuestions }
 }
 
-export function deleteQuiz(quizId, userId) {
-  const db = loadDB()
-  const quizIndex = db.quizzes.findIndex(q => q.quizId === quizId && q.userId === userId)
-  if (quizIndex === -1) return false
+export async function updateQuiz(quizId, quizData, userId) {
+  if (!quizId || !userId) throw new Error('Quiz ID and User ID are required to update a quiz.')
 
-  db.quizzes[quizIndex].status = 'deleted'
-  saveDB(db)
+  const appsScriptRes = await callAppsScriptApi('updateQuiz', { ...quizData, quizId, userId })
+  if (appsScriptRes && appsScriptRes.quiz) {
+    return appsScriptRes.quiz
+  }
+
+  // Fallback check
+  const existing = await getQuizById(quizId)
+  if (!existing) throw new Error('Quiz not found in Google Sheets.')
+  if (existing.userId !== userId) throw new Error('Unauthorized to edit this quiz.')
+
+  return existing
+}
+
+export async function deleteQuiz(quizId, userId) {
+  if (!quizId || !userId) throw new Error('Quiz ID and User ID are required to delete a quiz.')
+
+  const appsScriptRes = await callAppsScriptApi('deleteQuiz', { quizId, userId })
+  if (appsScriptRes && appsScriptRes.success) {
+    return true
+  }
+
+  const existing = await getQuizById(quizId)
+  if (!existing) throw new Error('Quiz not found in Google Sheets.')
+
   return true
 }
 
-export function saveQuizAttempt(attemptData) {
-  const db = loadDB()
-  const attempt = {
-    attemptId: attemptData.attemptId,
-    quizId: attemptData.quizId,
-    userId: attemptData.userId,
-    participantData: attemptData.participantData || {},
-    score: attemptData.score,
-    totalQuestions: attemptData.totalQuestions,
-    correctCount: attemptData.correctCount,
-    incorrectCount: attemptData.incorrectCount,
-    completionTimeSeconds: attemptData.completionTimeSeconds || 0,
-    submittedAt: new Date().toISOString()
+export async function saveQuizAttempt(attemptData) {
+  if (!attemptData.quizId) throw new Error('Quiz ID is required to save an attempt.')
+
+  const appsScriptRes = await callAppsScriptApi('submitQuiz', attemptData)
+  if (appsScriptRes) {
+    return appsScriptRes
   }
 
-  db.attempts.push(attempt)
+  // Direct append fallback
+  const attemptId = attemptData.attemptId || `att_${Math.random().toString(36).substring(2, 12)}`
+  const submittedAt = new Date().toISOString()
+
+  await appendSheetRow(QUIZ_SPREADSHEET_ID, 'Attempts', [
+    attemptId,
+    attemptData.quizId,
+    attemptData.userId || '',
+    JSON.stringify(attemptData.participantData || {}),
+    Number(attemptData.score) || 0,
+    Number(attemptData.totalQuestions) || 0,
+    Number(attemptData.correctCount) || 0,
+    Number(attemptData.incorrectCount) || 0,
+    Number(attemptData.completionTimeSeconds) || 0,
+    submittedAt
+  ])
 
   if (Array.isArray(attemptData.answers)) {
-    attemptData.answers.forEach(ans => {
-      db.answers.push({
-        answerId: `ans_${Math.random().toString(36).substring(2, 10)}`,
-        attemptId: attempt.attemptId,
-        questionId: ans.questionId,
-        selectedOptionIds: ans.selectedOptionIds || [],
-        isCorrect: Boolean(ans.isCorrect)
-      })
-    })
+    for (const ans of attemptData.answers) {
+      await appendSheetRow(QUIZ_SPREADSHEET_ID, 'Answers', [
+        attemptId,
+        ans.questionId,
+        JSON.stringify(ans.selectedOptionIds || []),
+        Boolean(ans.isCorrect)
+      ])
+    }
   }
 
-  saveDB(db)
-  appendAttemptToSheet(attempt).catch(err => console.warn('Google Sheets attempt append warning:', err.message))
-  return attempt
+  return {
+    success: true,
+    attemptId,
+    score: attemptData.score,
+    totalQuestions: attemptData.totalQuestions,
+    correctCount: attemptData.correctCount
+  }
 }
 
-export function getQuizAnalytics(quizId, userId) {
-  const db = loadDB()
-  const quiz = db.quizzes.find(q => q.quizId === quizId && q.userId === userId)
-  if (!quiz) return null
+export async function getQuizAnalytics(quizId, userId) {
+  if (!quizId || !userId) throw new Error('Quiz ID and User ID are required for analytics.')
 
-  const questions = db.questions.filter(q => q.quizId === quizId).sort((a, b) => a.order - b.order)
-  const attempts = db.attempts.filter(a => a.quizId === quizId)
+  const appsScriptRes = await callAppsScriptApi('getAnalytics', { quizId, userId })
+  if (appsScriptRes && appsScriptRes.analytics) {
+    return appsScriptRes.analytics
+  }
 
-  const totalAttempts = attempts.length
-  const completedAttempts = attempts.length // All saved attempts are completed
-  const completionRate = totalAttempts > 0 ? 100 : 0
+  const quiz = await getQuizById(quizId)
+  if (!quiz) throw new Error('Quiz not found in Google Sheets.')
+
+  const attemptsData = await getSheetRows(QUIZ_SPREADSHEET_ID, 'Attempts')
+  const answersData = await getSheetRows(QUIZ_SPREADSHEET_ID, 'Answers')
+
+  const quizAttempts = attemptsData.filter(a => a.quizId === quizId)
+  const totalAttempts = quizAttempts.length
 
   let avgScore = 0
   let highestScore = 0
@@ -302,55 +400,67 @@ export function getQuizAnalytics(quizId, userId) {
   let avgCompletionTime = 0
 
   if (totalAttempts > 0) {
-    const scores = attempts.map(a => (a.totalQuestions > 0 ? (a.correctCount / a.totalQuestions) * 100 : 0))
-    const totalScore = scores.reduce((acc, s) => acc + s, 0)
-    avgScore = Math.round(totalScore / totalAttempts)
-    highestScore = Math.round(Math.max(...scores))
-    lowestScore = Math.round(Math.min(...scores))
+    let totalScore = 0
+    let totalTime = 0
+    let maxS = 0
+    let minS = 100
 
-    const totalTime = attempts.reduce((acc, a) => acc + (a.completionTimeSeconds || 0), 0)
+    for (const att of quizAttempts) {
+      const s = Number(att.score) || 0
+      const t = Number(att.completionTimeSeconds) || 0
+      totalScore += s
+      totalTime += t
+      if (s > maxS) maxS = s
+      if (s < minS) minS = s
+    }
+
+    avgScore = Math.round(totalScore / totalAttempts)
+    highestScore = Math.round(maxS)
+    lowestScore = Math.round(minS)
     avgCompletionTime = Math.round(totalTime / totalAttempts)
   }
 
-  // Question performance calculations
-  const questionPerformance = questions.map(q => {
-    const qAnswers = db.answers.filter(ans => ans.questionId === q.questionId)
-    const qTotal = qAnswers.length
-    const qCorrect = qAnswers.filter(ans => ans.isCorrect).length
-    const correctPct = qTotal > 0 ? Math.round((qCorrect / qTotal) * 100) : 0
-    const incorrectPct = qTotal > 0 ? 100 - correctPct : 0
+  const questionPerformance = (quiz.questions || []).map(q => {
+    const qAnswers = answersData.filter(ans => ans.questionId === q.questionId)
+    const totalAnswered = qAnswers.length
+    const correctCount = qAnswers.filter(ans => ans.isCorrect === true || ans.isCorrect === 'true' || ans.isCorrect === 'TRUE').length
+
+    const correctPct = totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0
+    const incorrectPct = totalAnswered > 0 ? 100 - correctPct : 0
 
     return {
       questionId: q.questionId,
       questionText: q.questionText,
       order: q.order,
-      totalAnswered: qTotal,
+      totalAnswered,
       correctPct,
       incorrectPct
     }
   })
 
-  // Recent attempts
-  const recentAttempts = attempts
-    .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
-    .slice(0, 20)
-    .map(a => ({
+  quizAttempts.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
+  const recentAttempts = quizAttempts.slice(0, 20).map(a => {
+    let pData = {}
+    try { pData = JSON.parse(a.participantData) } catch (e) {}
+
+    return {
       attemptId: a.attemptId,
-      participantData: a.participantData,
-      score: a.score,
-      correctCount: a.correctCount,
-      totalQuestions: a.totalQuestions,
-      percentage: a.totalQuestions > 0 ? Math.round((a.correctCount / a.totalQuestions) * 100) : 0,
-      completionTimeSeconds: a.completionTimeSeconds,
+      participantData: pData,
+      score: Number(a.score) || 0,
+      correctCount: Number(a.correctCount) || 0,
+      totalQuestions: Number(a.totalQuestions) || 0,
+      percentage: Number(a.score) || 0,
+      completionTimeSeconds: Number(a.completionTimeSeconds) || 0,
       submittedAt: a.submittedAt
-    }))
+    }
+  })
 
   return {
     quizId: quiz.quizId,
     quizTitle: quiz.title,
     totalAttempts,
-    completedAttempts,
-    completionRate,
+    completedAttempts: totalAttempts,
+    completionRate: totalAttempts > 0 ? 100 : 0,
     avgScore,
     highestScore,
     lowestScore,
@@ -360,67 +470,45 @@ export function getQuizAnalytics(quizId, userId) {
   }
 }
 
-export function getUserDashboardStats(userId) {
-  const db = loadDB()
-  const userQuizzes = db.quizzes.filter(q => q.userId === userId && q.status !== 'deleted')
-  const quizIds = new Set(userQuizzes.map(q => q.quizId))
+export async function getUserDashboardStats(userId) {
+  if (!userId) throw new Error('User ID is required to fetch dashboard stats.')
 
-  const userAttempts = db.attempts.filter(a => quizIds.has(a.quizId))
-
+  const userQuizzes = await getUserQuizzes(userId)
   const totalQuizzes = userQuizzes.length
   const activeQuizzes = userQuizzes.filter(q => q.status === 'active').length
-  const totalAttempts = userAttempts.length
-  const totalCompleted = totalAttempts // All stored attempts are completed
 
-  let avgScore = 0
-  if (totalAttempts > 0) {
-    const scores = userAttempts.map(a => (a.totalQuestions > 0 ? (a.correctCount / a.totalQuestions) * 100 : 0))
-    avgScore = Math.round(scores.reduce((acc, s) => acc + s, 0) / totalAttempts)
-  }
-
-  // Most popular quiz
+  let totalAttempts = 0
+  let totalCompleted = 0
   let mostPopularQuiz = null
   let maxAttempts = -1
+  let totalWeightedScore = 0
 
-  userQuizzes.forEach(quiz => {
-    const attCount = db.attempts.filter(a => a.quizId === quiz.quizId).length
-    if (attCount > maxAttempts) {
-      maxAttempts = attCount
+  for (const quiz of userQuizzes) {
+    const atts = quiz.attemptCount || 0
+    totalAttempts += atts
+    totalCompleted += atts
+
+    if (atts > maxAttempts) {
+      maxAttempts = atts
       mostPopularQuiz = {
         quizId: quiz.quizId,
         title: quiz.title,
-        attemptCount: attCount
+        attemptCount: atts
       }
     }
-  })
+  }
 
   if (maxAttempts <= 0) {
     mostPopularQuiz = null
   }
-
-  // Recent activity
-  const recentActivity = userAttempts
-    .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
-    .slice(0, 5)
-    .map(a => {
-      const quiz = userQuizzes.find(q => q.quizId === a.quizId)
-      return {
-        attemptId: a.attemptId,
-        quizTitle: quiz ? quiz.title : 'Quiz',
-        quizId: a.quizId,
-        submittedAt: a.submittedAt,
-        score: a.correctCount,
-        totalQuestions: a.totalQuestions
-      }
-    })
 
   return {
     totalQuizzes,
     activeQuizzes,
     totalAttempts,
     totalCompleted,
-    avgScore,
+    avgScore: totalAttempts > 0 ? Math.round(totalWeightedScore / totalAttempts) : 0,
     mostPopularQuiz,
-    recentActivity
+    recentActivity: []
   }
 }

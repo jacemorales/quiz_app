@@ -1,12 +1,56 @@
 import { google } from 'googleapis'
 
-const USER_SPREADSHEET_ID = process.env.USER_SPREADSHEET_ID || '1KC9kf3igF8xRm1MVaSmUhqCjLKJWArH-iKeYhBBVwnw'
-const QUIZ_SPREADSHEET_ID = process.env.QUIZ_SPREADSHEET_ID || '1KJeB29Iyg-JBM-NvgYEt9yPFU8SRNqf1XehCD6Phmho'
+export const USER_SPREADSHEET_ID = process.env.USER_SPREADSHEET_ID || '1KC9kf3igF8xRm1MVaSmUhqCjLKJWArH-iKeYhBBVwnw'
+export const QUIZ_SPREADSHEET_ID = process.env.QUIZ_SPREADSHEET_ID || '1KJeB29Iyg-JBM-NvgYEt9yPFU8SRNqf1XehCD6Phmho'
 
-let sheets = null
+function getAppsScriptUrl() {
+  return process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL || ''
+}
 
-function getSheetsClient() {
-  if (sheets) return sheets
+export async function callAppsScriptApi(action, payload = {}) {
+  const appsScriptUrl = getAppsScriptUrl()
+  if (!appsScriptUrl) {
+    return null
+  }
+
+  try {
+    const delimiter = appsScriptUrl.includes('?') ? '&' : '?'
+    const requestUrl = `${appsScriptUrl}${delimiter}action=${encodeURIComponent(action)}`
+
+    const response = await fetch(requestUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: JSON.stringify({
+        action,
+        data: payload
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Google Apps Script HTTP error! Status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    if (!result || typeof result !== 'object') {
+      throw new Error('Invalid response received from Google Apps Script backend.')
+    }
+
+    if (!result.success) {
+      throw new Error(result.error || `Google Apps Script operation failed for action '${action}'.`)
+    }
+
+    return result
+  } catch (err) {
+    throw new Error(`Failed to communicate with Google Apps Script [action: ${action}]: ${err.message}`)
+  }
+}
+
+let sheetsClient = null
+
+export function getSheetsClient() {
+  if (sheetsClient) return sheetsClient
 
   try {
     if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
@@ -16,115 +60,66 @@ function getSheetsClient() {
         process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
         ['https://www.googleapis.com/auth/spreadsheets']
       )
-      sheets = google.sheets({ version: 'v4', auth })
-      return sheets
+      sheetsClient = google.sheets({ version: 'v4', auth })
+      return sheetsClient
     } else if (process.env.GOOGLE_SHEETS_API_KEY) {
-      sheets = google.sheets({ version: 'v4', auth: process.env.GOOGLE_SHEETS_API_KEY })
-      return sheets
+      sheetsClient = google.sheets({ version: 'v4', auth: process.env.GOOGLE_SHEETS_API_KEY })
+      return sheetsClient
     }
   } catch (err) {
-    console.warn('Google Sheets client initialization skipped:', err.message)
+    throw new Error(`Failed to initialize Google Sheets client: ${err.message}`)
   }
   return null
 }
 
-export async function appendUserToSheet(user) {
+export async function getSheetRows(spreadsheetId, sheetName) {
   const client = getSheetsClient()
-  if (!client) return
+  if (!client) {
+    throw new Error('Google Sheets client is not configured. Please set GOOGLE_APPS_SCRIPT_URL or Google Service Account environment variables.')
+  }
+
   try {
-    await client.spreadsheets.values.append({
-      spreadsheetId: USER_SPREADSHEET_ID,
-      range: 'Users!A:D',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [[user.userId, user.name, user.email, user.createdAt]]
-      }
+    const res = await client.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A:Z`
     })
+
+    const values = res.data.values || []
+    if (values.length <= 1) return []
+
+    const headers = values[0]
+    const rows = []
+
+    for (let i = 1; i < values.length; i++) {
+      const row = {}
+      for (let j = 0; j < headers.length; j++) {
+        row[headers[j]] = values[i][j] !== undefined ? values[i][j] : ''
+      }
+      rows.push(row)
+    }
+
+    return rows
   } catch (err) {
-    console.warn('Failed to append user to Google Sheet:', err.message)
+    throw new Error(`Failed to fetch data from Google Sheet tab '${sheetName}': ${err.message}`)
   }
 }
 
-export async function appendQuizToSheet(quiz) {
+export async function appendSheetRow(spreadsheetId, sheetName, rowValues) {
   const client = getSheetsClient()
-  if (!client) return
-  try {
-    await client.spreadsheets.values.append({
-      spreadsheetId: QUIZ_SPREADSHEET_ID,
-      range: 'Quizzes!A:K',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [
-          [
-            quiz.quizId,
-            quiz.userId,
-            quiz.title,
-            quiz.description,
-            quiz.timerType,
-            quiz.timerDuration,
-            quiz.anonymous,
-            JSON.stringify(quiz.participantFields),
-            quiz.showScore,
-            quiz.status,
-            quiz.createdAt
-          ]
-        ]
-      }
-    })
-  } catch (err) {
-    console.warn('Failed to append quiz to Google Sheet:', err.message)
+  if (!client) {
+    throw new Error('Google Sheets client is not configured. Please set GOOGLE_APPS_SCRIPT_URL or Google Service Account environment variables.')
   }
-}
 
-export async function appendQuestionToSheet(question) {
-  const client = getSheetsClient()
-  if (!client) return
   try {
     await client.spreadsheets.values.append({
-      spreadsheetId: QUIZ_SPREADSHEET_ID,
-      range: 'Questions!A:E',
+      spreadsheetId,
+      range: `${sheetName}!A:Z`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [
-          [
-            question.questionId,
-            question.quizId,
-            question.questionText,
-            question.order,
-            JSON.stringify(question.options)
-          ]
-        ]
+        values: [rowValues]
       }
     })
   } catch (err) {
-    console.warn('Failed to append question to Google Sheet:', err.message)
-  }
-}
-
-export async function appendAttemptToSheet(attempt) {
-  const client = getSheetsClient()
-  if (!client) return
-  try {
-    await client.spreadsheets.values.append({
-      spreadsheetId: QUIZ_SPREADSHEET_ID,
-      range: 'Responses!A:H',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [
-          [
-            attempt.attemptId,
-            attempt.quizId,
-            JSON.stringify(attempt.participantData),
-            attempt.score,
-            attempt.correctCount,
-            attempt.totalQuestions,
-            attempt.completionTimeSeconds,
-            attempt.submittedAt
-          ]
-        ]
-      }
-    })
-  } catch (err) {
-    console.warn('Failed to append attempt to Google Sheet:', err.message)
+    throw new Error(`Failed to append row to Google Sheet tab '${sheetName}': ${err.message}`)
   }
 }
